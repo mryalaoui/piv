@@ -1,0 +1,13 @@
+[
+  { "min": 0,      "max": 50000,  "%plusValue": 0 },
+  { "min": 50001,  "max": 60000,  "%plusValue": 2, "rapport": 0.05 },
+  { "min": 60001,  "max": 100000, "%plusValue": 2 },
+  { "min": 100001, "max": 110000, "%plusValue": 3, "rapport": 0.1 },
+  { "min": 110001, "max": 150000, "%plusValue": 3 },
+  { "min": 150001, "max": 160000, "%plusValue": 4, "rapport": 0.15 },
+  { "min": 160001, "max": 200000, "%plusValue": 4 },
+  { "min": 200001, "max": 210000, "%plusValue": 5, "rapport": 0.2 },
+  { "min": 210001, "max": 250000, "%plusValue": 5 },
+  { "min": 250001, "max": 260000, "%plusValue": 6, "rapport": 0.25 },
+  { "min": 260001, "max": "-",    "%plusValue": 6 }
+]

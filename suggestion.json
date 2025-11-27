@@ -1,0 +1,90 @@
+{
+  "show": 4,
+  "suggestions": {
+    "general": [
+      {
+        "value": "Le montant de l'imposition estimée inclut une surtaxe de 2 à 6 %, dont le montant serait susceptible de varier en cas de pluralité de cédants.",
+        "url": "/vendre#impots-payer-pvi",
+        "condition": { "part1": "plusValueNette", "operator": ">", "part2": "50000" }
+      }
+    ],
+    "financier": [
+      {
+        "value": "L'impôt afférent à la plus-value est dû lors de la cession de l'immeuble et acquitté par le notaire.",
+        "url": "/vendre#impots-payer-pvi",
+        "condition": { "part1": "impots", "operator": ">", "part2": "0" }
+      }
+    ],
+    "juridique": [
+      { "value": "En cas de cession d'un bien démembré, le nu-propriétaire doit obtenir l'accord de l'usufruitier." },
+      {
+        "value": "La cession du domicile conjugual nécessite l'accord des deux époux.",
+        "condition": { "part1": "usageBien", "operator": "==", "part2": "residence-principale" }
+      },
+      { "value": "La décision de la cession d'un bien immobilier détenu en indivision doit être prise à l'unanimité." },
+      {
+        "value": "Des règles particulières s'appliquent en cas de cession d'une résidence principale détenue en démembrement.",
+        "url": "/vendre#exo-beneficier",
+        "condition": { "part1": "usageBien", "operator": "==", "part2": "residence-principale" }
+      }
+    ],
+    "fiscal": [
+      {
+        "value": "Lorsque l'immeuble a été occupé par le cédant jusqu'à sa mise en vente, l'exonération reste acquise si la cession intervient dans des délais normaux.",
+        "condition": { "part1": "usageBien", "operator": "==", "part2": "residence-principale" }
+      },
+      {
+        "value": "Si vous êtes soumis au plafonnement de l'IFI, la plus-value brute est considérée comme un revenu.",
+        "condition": { "part1": "plusValueBrute", "operator": ">", "part2": "0" }
+      },
+      {
+        "value": "N'oubliez pas de déclarer votre plus-value nette imposable (case 3VZ 2042-C).",
+        "condition": { "part1": "plusValueNette", "operator": ">", "part2": "0" }
+      },
+      {
+        "value": "La plus-value nette est prise en compte pour la contribution sur les hauts revenus.",
+        "condition": { "part1": "plusValueNette", "operator": ">", "part2": "0" }
+      },
+      {
+        "value": "Première cession d'un logement autre que la résidence principale : exonération possible en cas de remploi dans un délai de 24 mois.",
+        "condition": {
+          "part1": {
+            "part1": "usageBien",
+            "operator": "==",
+            "part2": "residence-secondaire"
+          },
+          "operator": "||",
+          "part2": {
+            "part1": "usageBien",
+            "operator": "==",
+            "part2": "location"
+          }
+        }
+      },
+      {
+        "value": "Les cessions détenues depuis plus de 30 ans sont totalement exonérées.",
+        "condition": { "part1": "detentionAnnee", "operator": ">", "part2": "30" }
+      },
+      {
+        "value": "Les cessions détenues depuis plus de 22 ans ne sont soumises qu’aux prélèvements sociaux.",
+        "condition": { "part1": "detentionAnnee", "operator": ">", "part2": "22" }
+      },
+      {
+        "value": "Les moins-values immobilières ne sont pas imputables.",
+        "condition": { "part1": "plusValueBrute", "operator": "<", "part2": "0" }
+      },
+      {
+        "value": "Les plus et moins-values ne se compensent pas.",
+        "url": "/vendre#calcul-plus-value-immobiliere"
+      },
+      {
+        "value": "La vente d'un terrain constructible est soumise à la TVA.",
+        "condition": { "part1": "typeBien", "operator": "==", "part2": "terrain" }
+      },
+      {
+        "value": "Les droits de donation sont ajoutés au prix d’acquisition.",
+        "condition": { "part1": "origineBien", "operator": "==", "part2": "donation" }
+      }
+    ]
+  }
+}
