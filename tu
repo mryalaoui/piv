@@ -1,207 +1,83 @@
-package com.bnpparibas.dsibddf.fis.pvi.domain.service;
+1. MODEL → Traduction en anglais (professionnelle et cohérente)
+Avant (Français) → Après (Anglais)
+Français	Anglais recommandé
+AbattementTaux	AllowanceRate ou DeductionRate
+AbattementYear	AllowanceYear ou DeductionYear
+OrigineBien	PropertyOrigin
+PviSimulationRequest	PviSimulationRequest (déjà en anglais 👍)
+PviSimulationResult	PviSimulationResult (déjà en anglais 👍)
+Suggestion	Suggestion (OK)
+TaxePlusValueBracket	CapitalGainTaxBracket
+TaxOutcomeState	TaxOutcomeState (OK)
+TravauxFlag	RenovationFlag ou WorkFlag
+TypeBien	PropertyType
+UsageBien	PropertyUsage
 
-import com.bnpparibas.dsibddf.fis.pvi.domain.model.*;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+➡️ Choix validés par convention internationale
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
+PropertyType / PropertyUsage / PropertyOrigin = standards.
 
-import static org.junit.jupiter.api.Assertions.*;
+CapitalGain = traduction officielle de “plus-value immobilière”.
 
-class PlusValueBruteCalculatorTest {
+Allowance/Deduction = selon ton choix (fiscal).
 
-    private PlusValueBruteCalculator calc;
+RenovationFlag = strictement exact pour travaux.
 
-    @BeforeEach
-    void setup() {
-        calc = new PlusValueBruteCalculator();
-    }
+🎯 Résultat final propre MODEL (nouveaux noms)
+AllowanceRate
+AllowanceYear
+PropertyOrigin
+PviSimulationRequest
+PviSimulationResult
+Suggestion
+CapitalGainTaxBracket
+TaxOutcomeState
+RenovationFlag
+PropertyType
+PropertyUsage
 
-    private PviSimulationRequest req(
-            TypeBien typeBien,
-            OrigineBien origine,
-            TravauxFlag travaux,
-            BigDecimal prixOrigine,
-            BigDecimal fraisOrigine,
-            BigDecimal fraisReels,
-            BigDecimal montantTravaux,
-            BigDecimal prixVente,
-            BigDecimal fraisVente
-    ) {
-        return new PviSimulationRequest(
-                typeBien,
-                UsageBien.RESIDENCE_SECONDAIRE,
-                origine,
-                LocalDate.of(2010, 1, 1),
-                LocalDate.of(2025, 1, 1),
-                prixOrigine,
-                fraisOrigine,
-                fraisReels,
-                prixVente,
-                fraisVente,
-                travaux,
-                montantTravaux
-        );
-    }
+✅ 2. SERVICE → Traduction en anglais (professionnelle)
+Avant (Français) → Après (Anglais)
+Français	Anglais recommandé
+AbattementService	AllowanceService
+AnniversaryService	AnniversaryService (déjà en anglais 👍)
+DetentionCalculator	HoldingPeriodCalculator
+PlusValueBruteCalculator	GrossCapitalGainCalculator
+PviSimulationService	PviSimulationService (OK)
+SuggestionEngine	SuggestionEngine (OK)
+TaxBreakdown	TaxBreakdown (OK)
+TaxCalculator	TaxCalculator (OK)
+TaxePlusValueService	CapitalGainTaxService
+TravauxMessageService	RenovationMessageService
+🎯 Résultat final propre SERVICE (nouveaux noms)
+AllowanceService
+AnniversaryService
+HoldingPeriodCalculator
+GrossCapitalGainCalculator
+PviSimulationService
+SuggestionEngine
+TaxBreakdown
+TaxCalculator
+CapitalGainTaxService
+RenovationMessageService
 
-    @Test
-    void cas1_achat_forfait_superieur_aux_frais_reels() {
-        var r = req(TypeBien.APPARTEMENT, OrigineBien.ACHAT, TravauxFlag.NON,
-                new BigDecimal("100000"), BigDecimal.ZERO, new BigDecimal("1000"),
-                BigDecimal.ZERO, new BigDecimal("200000"), BigDecimal.ZERO);
-        assertEquals(new BigDecimal("200000")
-                        .subtract(new BigDecimal("100000")
-                                .add(new BigDecimal("7500"))),
-                calc.calculate(r, 0));
-    }
+🚀 Prochaine étape
 
-    @Test
-    void cas2_achat_frais_reels_superieurs_au_forfait() {
-        var r = req(TypeBien.APPARTEMENT, OrigineBien.ACHAT, TravauxFlag.NON,
-                new BigDecimal("100000"), BigDecimal.ZERO, new BigDecimal("10000"),
-                BigDecimal.ZERO, new BigDecimal("200000"), BigDecimal.ZERO);
-        assertEquals(new BigDecimal("200000")
-                        .subtract(new BigDecimal("100000")
-                                .add(new BigDecimal("10000"))),
-                calc.calculate(r, 0));
-    }
+Tu me dis :
+👉 "C’est validé, on applique ces noms"
+ou
+👉 "Change juste quelques noms"
 
-    @Test
-    void cas3_non_achat_frais_origine_non_nuls() {
-        var r = req(TypeBien.APPARTEMENT, OrigineBien.DONATION, TravauxFlag.NON,
-                new BigDecimal("100000"), new BigDecimal("8000"), BigDecimal.ZERO,
-                BigDecimal.ZERO, new BigDecimal("200000"), BigDecimal.ZERO);
-        assertEquals(new BigDecimal("200000")
-                        .subtract(new BigDecimal("100000")
-                                .add(new BigDecimal("8000"))),
-                calc.calculate(r, 0));
-    }
+Dès que tu valides :
 
-    @Test
-    void cas4_non_achat_frais_origine_nuls() {
-        var r = req(TypeBien.APPARTEMENT, OrigineBien.SUCCESSION, TravauxFlag.NON,
-                new BigDecimal("100000"), null, BigDecimal.ZERO,
-                BigDecimal.ZERO, new BigDecimal("200000"), BigDecimal.ZERO);
-        assertEquals(new BigDecimal("200000")
-                        .subtract(new BigDecimal("100000")),
-                calc.calculate(r, 0));
-    }
+✔️ Je te génère automatiquement :
 
-    @Test
-    void cas5_travaux_non_montant_zero() {
-        var r = req(TypeBien.APPARTEMENT, OrigineBien.ACHAT, TravauxFlag.NON,
-                new BigDecimal("100000"), BigDecimal.ZERO, new BigDecimal("10000"),
-                new BigDecimal("50000"), new BigDecimal("200000"), BigDecimal.ZERO);
-        assertEquals(new BigDecimal("200000")
-                        .subtract(new BigDecimal("100000")
-                                .add(new BigDecimal("10000"))),
-                calc.calculate(r, 0));
-    }
+Les nouveaux noms de fichiers
 
-    @Test
-    void cas6_travaux_oui_detention_inferieure_5() {
-        var r = req(TypeBien.APPARTEMENT, OrigineBien.ACHAT, TravauxFlag.OUI,
-                new BigDecimal("100000"), BigDecimal.ZERO, new BigDecimal("10000"),
-                new BigDecimal("5000"), new BigDecimal("200000"), BigDecimal.ZERO);
-        assertEquals(new BigDecimal("200000")
-                        .subtract(new BigDecimal("100000")
-                                .add(new BigDecimal("10000"))
-                                .add(new BigDecimal("5000"))),
-                calc.calculate(r, 4));
-    }
+Les nouveaux packages si nécessaire
 
-    @Test
-    void cas7_travaux_oui_detention_5_forfait_superieur() {
-        var r = req(TypeBien.APPARTEMENT, OrigineBien.ACHAT, TravauxFlag.OUI,
-                new BigDecimal("100000"), BigDecimal.ZERO, new BigDecimal("1000"),
-                new BigDecimal("5000"), new BigDecimal("200000"), BigDecimal.ZERO);
-        assertEquals(new BigDecimal("200000")
-                        .subtract(new BigDecimal("100000")
-                                .add(new BigDecimal("7500"))
-                                .add(new BigDecimal("15000"))),
-                calc.calculate(r, 5));
-    }
+Les nouveaux tests unitaires avec les nouveaux noms
 
-    @Test
-    void cas8_travaux_oui_detention_5_travaux_superieurs() {
-        var r = req(TypeBien.APPARTEMENT, OrigineBien.ACHAT, TravauxFlag.OUI,
-                new BigDecimal("100000"), BigDecimal.ZERO, new BigDecimal("1000"),
-                new BigDecimal("50000"), new BigDecimal("200000"), BigDecimal.ZERO);
-        assertEquals(new BigDecimal("200000")
-                        .subtract(new BigDecimal("100000")
-                                .add(new BigDecimal("7500"))
-                                .add(new BigDecimal("50000"))),
-                calc.calculate(r, 5));
-    }
+La classe renommer de PlusValueBruteCalculator → GrossCapitalGainCalculatorTest
 
-    @Test
-    void cas9_travaux_oui_detention_5_terrain_pas_de_forfait() {
-        var r = req(TypeBien.TERRAIN, OrigineBien.ACHAT, TravauxFlag.OUI,
-                new BigDecimal("100000"), BigDecimal.ZERO, new BigDecimal("1000"),
-                new BigDecimal("20000"), new BigDecimal("200000"), BigDecimal.ZERO);
-        assertEquals(new BigDecimal("200000")
-                        .subtract(new BigDecimal("100000")
-                                .add(new BigDecimal("7500"))
-                                .add(new BigDecimal("20000"))),
-                calc.calculate(r, 5));
-    }
-
-    @Test
-    void cas10_frais_vente_zero() {
-        var r = req(TypeBien.APPARTEMENT, OrigineBien.ACHAT, TravauxFlag.NON,
-                new BigDecimal("100000"), BigDecimal.ZERO, new BigDecimal("1000"),
-                BigDecimal.ZERO, new BigDecimal("200000"), BigDecimal.ZERO);
-        assertEquals(new BigDecimal("200000")
-                        .subtract(new BigDecimal("100000")
-                                .add(new BigDecimal("7500"))),
-                calc.calculate(r, 0));
-    }
-
-    @Test
-    void cas11_frais_vente_superieurs_zero() {
-        var r = req(TypeBien.APPARTEMENT, OrigineBien.ACHAT, TravauxFlag.NON,
-                new BigDecimal("100000"), BigDecimal.ZERO, new BigDecimal("1000"),
-                BigDecimal.ZERO, new BigDecimal("200000"), new BigDecimal("10000"));
-        assertEquals(new BigDecimal("190000")
-                        .subtract(new BigDecimal("100000")
-                                .add(new BigDecimal("7500"))),
-                calc.calculate(r, 0));
-    }
-
-    @Test
-    void cas12_valeurs_null_nvl() {
-        var r = req(TypeBien.APPARTEMENT, OrigineBien.SUCCESSION, TravauxFlag.NON,
-                null, null, null, null, null, null);
-        assertEquals(BigDecimal.ZERO, calc.calculate(r, 0));
-    }
-
-    @Test
-    void cas13_resultat_plus_value_positive() {
-        var r = req(TypeBien.APPARTEMENT, OrigineBien.ACHAT, TravauxFlag.NON,
-                new BigDecimal("50000"), BigDecimal.ZERO, new BigDecimal("1000"),
-                BigDecimal.ZERO, new BigDecimal("150000"), BigDecimal.ZERO);
-        assertTrue(calc.calculate(r, 0).compareTo(BigDecimal.ZERO) > 0);
-    }
-
-    @Test
-    void cas14_resultat_moins_value() {
-        var r = req(TypeBien.APPARTEMENT, OrigineBien.ACHAT, TravauxFlag.NON,
-                new BigDecimal("200000"), BigDecimal.ZERO, new BigDecimal("10000"),
-                BigDecimal.ZERO, new BigDecimal("150000"), BigDecimal.ZERO);
-        assertTrue(calc.calculate(r, 0).compareTo(BigDecimal.ZERO) < 0);
-    }
-
-    @Test
-    void cas15_arrondi_half_up() {
-        var r = req(TypeBien.APPARTEMENT, OrigineBien.ACHAT, TravauxFlag.NON,
-                new BigDecimal("100000"), BigDecimal.ZERO, new BigDecimal("0"),
-                BigDecimal.ZERO, new BigDecimal("107500.4"), BigDecimal.ZERO);
-        assertEquals(new BigDecimal("7500"), calc.calculate(r, 0));
-
-        var r2 = req(TypeBien.APPARTEMENT, OrigineBien.ACHAT, TravauxFlag.NON,
-                new BigDecimal("100000"), BigDecimal.ZERO, new BigDecimal("0"),
-                BigDecimal.ZERO, new BigDecimal("107500.5"), BigDecimal.ZERO);
-        assertEquals(new BigDecimal("7501"), calc.calculate(r2, 0));
-    }
-}
+On fait le refactor propre dans l’ordre pro.
