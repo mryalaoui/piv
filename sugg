@@ -1,226 +1,186 @@
-package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine;
+package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service;
 
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.dto.PviSimulationRequest;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.enums.*;
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.result.PviSimulationResult;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.SuggestionVO;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.result.TaxBreakdownResult;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.calculator.GrossCapitalGainCalculator;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.calculator.TaxCalculator;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine.SuggestionEngine;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.internal.AnniversaryService;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.internal.RenovationMessageService;
 
-import java.io.InputStream;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.*;
+
 import java.math.BigDecimal;
-import java.util.*;
+import java.time.LocalDate;
+import java.util.List;
 
-/**
- * Moteur de suggestions PVI :
- * - charge le JSON /pvi/suggestion.json
- * - évalue les conditions
- * - sélectionne des suggestions "à la façon PHP" :
- *   1 par catégorie, puis complétion aléatoire jusqu'à maxSuggestions.
- */
-@Service
-@RequiredArgsConstructor
-public class SuggestionEngine {
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
-    public static final String PVI_SUGGESTION_JSON = "/pvi/suggestion.json";
+class PviSimulationServiceTest {
 
-    private final ObjectMapper objectMapper;
+    @Mock
+    private GrossCapitalGainCalculator grossCalculator;
 
-    // valeur par défaut, éventuellement surchargée par le JSON ("show")
-    private int maxSuggestions = 4;
+    @Mock
+    private TaxCalculator taxCalculator;
 
-    // liste complète de toutes les suggestions chargées
-    private final List<SuggestionVO> suggestionVOS = new ArrayList<>();
+    @Mock
+    private AnniversaryService anniversaryService;
 
-    @PostConstruct
-    public void load() throws Exception {
-        try (InputStream is = getClass().getResourceAsStream(PVI_SUGGESTION_JSON)) {
-            JsonNode root = objectMapper.readTree(is);
-            if (root.has("show")) {
-                maxSuggestions = root.get("show").asInt(4);
-            }
+    @Mock
+    private RenovationMessageService renovationMessageService;
 
-            JsonNode sugRoot = root.get("suggestions");
-            if (sugRoot == null || !sugRoot.isObject()) {
-                return;
-            }
+    @Mock
+    private SuggestionEngine suggestionEngine;
 
-            Iterator<String> fieldNames = sugRoot.fieldNames();
-            while (fieldNames.hasNext()) {
-                String category = fieldNames.next();              // ex: "general", "fiscal", ...
-                JsonNode array = sugRoot.get(category);
-                if (array != null && array.isArray()) {
-                    for (JsonNode sNode : array) {
-                        String value = sNode.get("value").asText();
-                        String url = sNode.hasNonNull("url") ? sNode.get("url").asText() : null;
-                        JsonNode condition = sNode.get("condition");
+    @InjectMocks
+    private PviSimulationService service;
 
-                        suggestionVOS.add(new SuggestionVO(category, value, url, condition));
-                    }
-                }
-            }
-        }
+    private PviSimulationRequest req;
+
+    @BeforeEach
+    void init() {
+        MockitoAnnotations.openMocks(this);
+
+        req = new PviSimulationRequest(
+                PropertyType.APPARTEMENT,
+                PropertyUsage.RESIDENCE_SECONDAIRE,
+                PropertyOrigin.ACHAT,
+                LocalDate.of(2010, 1, 1),
+                LocalDate.of(2025, 1, 1),
+                new BigDecimal("150000"),
+                null,
+                null,
+                new BigDecimal("300000"),
+                null,
+                RenovationFlag.NON,
+                null
+        );
     }
 
-    /**
-     * Permet, en test, de surcharger la limite (ex: 20)
-     * pour balayer toutes les règles de gestion.
-     */
-    public void setMaxSuggestions(int maxSuggestions) {
-        this.maxSuggestions = maxSuggestions;
+    // ----------------------------------------------------------------------
+    // 1. Cas général : simulation complète en mode "taxable"
+    // ----------------------------------------------------------------------
+    @Test
+    void shouldSimulateFullFlow() {
+
+        // Mock durée de détention = 15 ans
+        // (HoldingPeriodCalculator est static → on contrôle par dates)
+        // 2010 → 2025 = 15 ans
+
+        // Gross capital gain
+        when(grossCalculator.calculate(eq(req), eq(15)))
+                .thenReturn(new BigDecimal("100000"));
+
+        // Taxes
+        TaxBreakdownResult taxes = TaxBreakdownResult.builder()
+                .baseIr(new BigDecimal("80000"))
+                .basePs(new BigDecimal("80000"))
+                .impotRevenu(new BigDecimal("15200"))
+                .prelevementsSociaux(new BigDecimal("13760"))
+                .taxePlusValue(new BigDecimal("3000"))
+                .total(new BigDecimal("31960"))
+                .build();
+
+        when(taxCalculator.compute(any(), eq(15), eq(false), eq(new BigDecimal("300000"))))
+                .thenReturn(taxes);
+
+        // Messages
+        when(renovationMessageService.buildMessage(req, 15))
+                .thenReturn("Travaux forfaitaires appliqués.");
+
+        when(anniversaryService.computeAnniversaryDate(any(), any()))
+                .thenReturn(LocalDate.of(2026, 1, 1));
+
+        when(anniversaryService.buildMessage(any(), any(), any()))
+                .thenReturn("Anniversaire fiscal : report conseillé.");
+
+        when(suggestionEngine.computeSuggestions(any(), any()))
+                .thenReturn(List.of());
+
+        // ------------------------------
+        //   EXECUTION
+        // ------------------------------
+        PviSimulationResult result = service.simulate(req);
+
+        // ------------------------------
+        //   ASSERTIONS LOGIQUES
+        // ------------------------------
+        assertEquals(15, result.getDetentionAnnee());
+        assertEquals(new BigDecimal("300000"), result.getPrixCession());
+        assertEquals(new BigDecimal("100000"), result.getPlusValueBrute());
+        assertEquals(new BigDecimal("80000"), result.getPlusValueNette());
+        assertEquals(new BigDecimal("31960"), result.getImpotsTotaux());
+        assertEquals(TaxOutcomeState.IMPOSABLE_IR_PS, result.getTaxOutcomeState());
+        assertEquals(new BigDecimal("268040"), result.getNetDispo()); // 300000 - 31960
+
+        assertEquals("Travaux forfaitaires appliqués.", result.getMessageTravaux());
+        assertEquals("Anniversaire fiscal : report conseillé.", result.getMessageAnniversaire());
     }
 
-    public List<SuggestionVO> computeSuggestions(PviSimulationRequest req, PviSimulationResult result) {
-        if (maxSuggestions <= 0) {
-            return List.of();
-        }
+    // ----------------------------------------------------------------------
+    // 2. Cas : plus-value <= 0 → NON IMPOSABLE
+    // ----------------------------------------------------------------------
+    @Test
+    void shouldBeNonImposableWhenPlusValueNegative() {
 
-        // 1) Filtrer toutes les suggestions éligibles, regroupées par catégorie
-        Map<String, List<SuggestionVO>> eligibleByCategory = new LinkedHashMap<>();
+        when(grossCalculator.calculate(eq(req), eq(15)))
+                .thenReturn(new BigDecimal("-5000"));
 
-        for (SuggestionVO s : suggestionVOS) {
-            if (s.conditionNode() == null || evalCondition(s.conditionNode(), req, result)) {
-                eligibleByCategory
-                        .computeIfAbsent(s.category(), k -> new ArrayList<>())
-                        .add(s);
-            }
-        }
+        TaxBreakdownResult zeroTaxes = TaxBreakdownResult.builder()
+                .baseIr(BigDecimal.ZERO)
+                .basePs(BigDecimal.ZERO)
+                .impotRevenu(BigDecimal.ZERO)
+                .prelevementsSociaux(BigDecimal.ZERO)
+                .taxePlusValue(BigDecimal.ZERO)
+                .total(BigDecimal.ZERO)
+                .build();
 
-        List<SuggestionVO> selected = new ArrayList<>();
-        List<SuggestionVO> leftovers = new ArrayList<>();
-        Random random = new Random();
+        when(taxCalculator.compute(any(), anyInt(), anyBoolean(), any()))
+                .thenReturn(zeroTaxes);
 
-        // 2) Une suggestion aléatoire par catégorie (si disponible)
-        for (List<SuggestionVO> perCategory : eligibleByCategory.values()) {
-            if (perCategory.isEmpty()) {
-                continue;
-            }
-            int idx = random.nextInt(perCategory.size());
-            SuggestionVO picked = perCategory.get(idx);
-            selected.add(picked);
+        PviSimulationResult result = service.simulate(req);
 
-            // les autres de la catégorie partent dans les "leftovers"
-            for (int i = 0; i < perCategory.size(); i++) {
-                if (i != idx) {
-                    leftovers.add(perCategory.get(i));
-                }
-            }
-        }
-
-        // 3) Compléter aléatoirement jusqu'à maxSuggestions avec les leftovers
-        while (selected.size() < maxSuggestions && !leftovers.isEmpty()) {
-            int idx = random.nextInt(leftovers.size());
-            selected.add(leftovers.remove(idx));
-        }
-
-        return selected;
+        assertEquals(TaxOutcomeState.NON_IMPOSABLE_MOINS_VALUE, result.getTaxOutcomeState());
+        assertEquals(0, result.getImpotsTotaux().intValue());
+        assertNull(result.getMessageAnniversaire());
     }
 
-    // ---------------------- Évaluation de condition ----------------------
+    // ----------------------------------------------------------------------
+    // 3. Cas : résidence principale → NON IMPOSABLE
+    // ----------------------------------------------------------------------
+    @Test
+    void shouldBeNonImposableResidencePrincipale() {
 
-    private boolean evalCondition(JsonNode node, PviSimulationRequest req, PviSimulationResult result) {
-        if (node == null || node.isNull()) {
-            return true;
-        }
+        PviSimulationRequest req2 = new PviSimulationRequest(
+                PropertyType.APPARTEMENT,
+                PropertyUsage.RESIDENCE_PRINCIPALE,
+                PropertyOrigin.ACHAT,
+                LocalDate.of(2010, 1, 1),
+                LocalDate.of(2025, 1, 1),
+                new BigDecimal("150000"),
+                null,
+                null,
+                new BigDecimal("300000"),
+                null,
+                RenovationFlag.NON,
+                null
+        );
 
-        JsonNode part1 = node.get("part1");
-        JsonNode opNode = node.get("operator");
-        JsonNode part2 = node.get("part2");
+        when(grossCalculator.calculate(eq(req2), eq(15)))
+                .thenReturn(new BigDecimal("120000"));
 
-        if (part1 == null || opNode == null || part2 == null) {
-            // JSON mal formé ⇒ on considère la suggestion comme toujours éligible
-            return true;
-        }
+        when(taxCalculator.compute(any(), anyInt(), eq(true), any()))
+                .thenReturn(TaxBreakdownResult.builder().total(BigDecimal.ZERO).build());
 
-        String op = opNode.asText();
+        PviSimulationResult result = service.simulate(req2);
 
-        // Cas "composé" (OR / AND entre deux conditions)
-        if (part1.isObject() && part1.has("part1") && part1.has("operator")) {
-            boolean left = evalCondition(part1, req, result);
-            boolean right = evalCondition(part2, req, result);
-            return switch (op) {
-                case "||" -> left || right;
-                case "&&" -> left && right;
-                default -> false;
-            };
-        }
-
-        // Cas simple : var OP constante
-        String varName = part1.asText();
-        Object leftValue = resolveVariable(varName, req, result);
-
-        String rightRaw = part2.asText();
-
-        return switch (op) {
-            case "==" -> compareEquals(leftValue, rightRaw);
-            case ">"  -> compareGreater(leftValue, rightRaw);
-            case "<"  -> compareLess(leftValue, rightRaw);
-            default   -> false;
-        };
-    }
-
-    private Object resolveVariable(String name, PviSimulationRequest req, PviSimulationResult result) {
-        return switch (name) {
-            case "plusValueBrute" -> result.getPlusValueBrute();
-            case "plusValueNette" -> result.getPlusValueNette();
-            case "impots"         -> result.getImpotsTotaux();
-            case "detentionAnnee" -> BigDecimal.valueOf(result.getDetentionAnnee());
-
-            case "usageBien" -> req.usageBien() == null
-                    ? null
-                    : req.usageBien().name().toLowerCase().replace('_', '-');
-
-            case "typeBien" -> req.typeBien() == null
-                    ? null
-                    : req.typeBien().name().toLowerCase();
-
-            case "origineBien" -> req.origineBien() == null
-                    ? null
-                    : req.origineBien().name().toLowerCase();
-
-            default -> null;
-        };
-    }
-
-    private boolean compareEquals(Object left, String rightRaw) {
-        if (left == null) return false;
-
-        if (left instanceof BigDecimal bd) {
-            try {
-                BigDecimal right = new BigDecimal(rightRaw);
-                return bd.compareTo(right) == 0;
-            } catch (NumberFormatException e) {
-                return false;
-            }
-        }
-
-        String leftStr = left.toString();
-        return leftStr.equalsIgnoreCase(rightRaw);
-    }
-
-    private boolean compareGreater(Object left, String rightRaw) {
-        if (!(left instanceof BigDecimal bd)) {
-            return false;
-        }
-        try {
-            BigDecimal right = new BigDecimal(rightRaw);
-            return bd.compareTo(right) > 0;
-        } catch (NumberFormatException e) {
-            return false;
-        }
-    }
-
-    private boolean compareLess(Object left, String rightRaw) {
-        if (!(left instanceof BigDecimal bd)) {
-            return false;
-        }
-        try {
-            BigDecimal right = new BigDecimal(rightRaw);
-            return bd.compareTo(right) < 0;
-        } catch (NumberFormatException e) {
-            return false;
-        }
+        assertEquals(TaxOutcomeState.NON_IMPOSABLE_RESIDENCE_PRINCIPALE, result.getTaxOutcomeState());
+        assertEquals(BigDecimal.ZERO, result.getImpotsTotaux());
     }
 }
