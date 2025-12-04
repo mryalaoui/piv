@@ -1,275 +1,226 @@
 package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine;
 
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.dto.PviSimulationRequest;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.enums.*;
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.result.PviSimulationResult;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.result.TaxOutcomeState;
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.SuggestionVO;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.*;
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
 
+import java.io.InputStream;
 import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.List;
+import java.util.*;
 
-import static org.junit.jupiter.api.Assertions.*;
+/**
+ * Moteur de suggestions PVI :
+ * - charge le JSON /pvi/suggestion.json
+ * - évalue les conditions
+ * - sélectionne des suggestions "à la façon PHP" :
+ *   1 par catégorie, puis complétion aléatoire jusqu'à maxSuggestions.
+ */
+@Service
+@RequiredArgsConstructor
+public class SuggestionEngine {
 
-class SuggestionEngineRealDataTest {
+    public static final String PVI_SUGGESTION_JSON = "/pvi/suggestion.json";
 
-    private SuggestionEngine engine;
+    private final ObjectMapper objectMapper;
 
-    @BeforeEach
-    void setUp() throws Exception {
-        engine = new SuggestionEngine(new ObjectMapper());
-        engine.load();
+    // valeur par défaut, éventuellement surchargée par le JSON ("show")
+    private int maxSuggestions = 4;
+
+    // liste complète de toutes les suggestions chargées
+    private final List<SuggestionVO> suggestionVOS = new ArrayList<>();
+
+    @PostConstruct
+    public void load() throws Exception {
+        try (InputStream is = getClass().getResourceAsStream(PVI_SUGGESTION_JSON)) {
+            JsonNode root = objectMapper.readTree(is);
+            if (root.has("show")) {
+                maxSuggestions = root.get("show").asInt(4);
+            }
+
+            JsonNode sugRoot = root.get("suggestions");
+            if (sugRoot == null || !sugRoot.isObject()) {
+                return;
+            }
+
+            Iterator<String> fieldNames = sugRoot.fieldNames();
+            while (fieldNames.hasNext()) {
+                String category = fieldNames.next();              // ex: "general", "fiscal", ...
+                JsonNode array = sugRoot.get(category);
+                if (array != null && array.isArray()) {
+                    for (JsonNode sNode : array) {
+                        String value = sNode.get("value").asText();
+                        String url = sNode.hasNonNull("url") ? sNode.get("url").asText() : null;
+                        JsonNode condition = sNode.get("condition");
+
+                        suggestionVOS.add(new SuggestionVO(category, value, url, condition));
+                    }
+                }
+            }
+        }
     }
 
-    // --------------------------
-    // Helpers
-    // --------------------------
-
-    private PviSimulationRequest request(PropertyUsage usage, PropertyType type, PropertyOrigin origin) {
-        return new PviSimulationRequest(
-                type,
-                usage,
-                origin,
-                LocalDate.of(2010, 1, 1),
-                LocalDate.of(2025, 1, 1),
-                new BigDecimal("150000"),
-                null,
-                null,
-                new BigDecimal("350000"),
-                null,
-                RenovationFlag.NON,
-                null
-        );
+    /**
+     * Permet, en test, de surcharger la limite (ex: 20)
+     * pour balayer toutes les règles de gestion.
+     */
+    public void setMaxSuggestions(int maxSuggestions) {
+        this.maxSuggestions = maxSuggestions;
     }
 
-    private PviSimulationResult result(
-            int detentionYears,
-            BigDecimal pvBrute,
-            BigDecimal pvNette,
-            BigDecimal impots
-    ) {
-        return PviSimulationResult.builder()
-                .detentionAnnee(detentionYears)
-                .plusValueBrute(pvBrute)
-                .plusValueNette(pvNette)
-                .impotsTotaux(impots)
-                .prixCession(new BigDecimal("350000"))
-                .prixRevient(new BigDecimal("150000"))
-                .impotRevenu(BigDecimal.ZERO)
-                .prelevementsSociaux(BigDecimal.ZERO)
-                .taxePlusValue(BigDecimal.ZERO)
-                .netDispo(BigDecimal.ZERO)
-                .pressionFiscale(0)
-                .taxOutcomeState(TaxOutcomeState.TAXABLE)
-                .build();
+    public List<SuggestionVO> computeSuggestions(PviSimulationRequest req, PviSimulationResult result) {
+        if (maxSuggestions <= 0) {
+            return List.of();
+        }
+
+        // 1) Filtrer toutes les suggestions éligibles, regroupées par catégorie
+        Map<String, List<SuggestionVO>> eligibleByCategory = new LinkedHashMap<>();
+
+        for (SuggestionVO s : suggestionVOS) {
+            if (s.conditionNode() == null || evalCondition(s.conditionNode(), req, result)) {
+                eligibleByCategory
+                        .computeIfAbsent(s.category(), k -> new ArrayList<>())
+                        .add(s);
+            }
+        }
+
+        List<SuggestionVO> selected = new ArrayList<>();
+        List<SuggestionVO> leftovers = new ArrayList<>();
+        Random random = new Random();
+
+        // 2) Une suggestion aléatoire par catégorie (si disponible)
+        for (List<SuggestionVO> perCategory : eligibleByCategory.values()) {
+            if (perCategory.isEmpty()) {
+                continue;
+            }
+            int idx = random.nextInt(perCategory.size());
+            SuggestionVO picked = perCategory.get(idx);
+            selected.add(picked);
+
+            // les autres de la catégorie partent dans les "leftovers"
+            for (int i = 0; i < perCategory.size(); i++) {
+                if (i != idx) {
+                    leftovers.add(perCategory.get(i));
+                }
+            }
+        }
+
+        // 3) Compléter aléatoirement jusqu'à maxSuggestions avec les leftovers
+        while (selected.size() < maxSuggestions && !leftovers.isEmpty()) {
+            int idx = random.nextInt(leftovers.size());
+            selected.add(leftovers.remove(idx));
+        }
+
+        return selected;
     }
 
-    // -------------------------------------------------------
-    // 1. Vérifie que le JSON est bien chargé
-    // -------------------------------------------------------
-    @Test
-    void shouldLoadRealSuggestionJson() {
+    // ---------------------- Évaluation de condition ----------------------
 
-        // given
-        PropertyUsage usage = PropertyUsage.RESIDENCE_SECONDAIRE;
-        PropertyType type = PropertyType.APPARTEMENT;
-        PropertyOrigin origin = PropertyOrigin.ACHAT;
+    private boolean evalCondition(JsonNode node, PviSimulationRequest req, PviSimulationResult result) {
+        if (node == null || node.isNull()) {
+            return true;
+        }
 
-        int detentionYears = 10;
-        BigDecimal pvBrute = BigDecimal.ZERO;
-        BigDecimal pvNette = BigDecimal.ZERO;
-        BigDecimal impots = BigDecimal.ZERO;
+        JsonNode part1 = node.get("part1");
+        JsonNode opNode = node.get("operator");
+        JsonNode part2 = node.get("part2");
 
-        PviSimulationRequest req = request(usage, type, origin);
-        PviSimulationResult res = result(detentionYears, pvBrute, pvNette, impots);
+        if (part1 == null || opNode == null || part2 == null) {
+            // JSON mal formé ⇒ on considère la suggestion comme toujours éligible
+            return true;
+        }
 
-        // when
-        List<SuggestionVO> suggestions = engine.computeSuggestions(req, res);
+        String op = opNode.asText();
 
-        // then
-        assertTrue(suggestions.size() >= 1, "Le JSON réel devrait contenir au moins une suggestion.");
+        // Cas "composé" (OR / AND entre deux conditions)
+        if (part1.isObject() && part1.has("part1") && part1.has("operator")) {
+            boolean left = evalCondition(part1, req, result);
+            boolean right = evalCondition(part2, req, result);
+            return switch (op) {
+                case "||" -> left || right;
+                case "&&" -> left && right;
+                default -> false;
+            };
+        }
+
+        // Cas simple : var OP constante
+        String varName = part1.asText();
+        Object leftValue = resolveVariable(varName, req, result);
+
+        String rightRaw = part2.asText();
+
+        return switch (op) {
+            case "==" -> compareEquals(leftValue, rightRaw);
+            case ">"  -> compareGreater(leftValue, rightRaw);
+            case "<"  -> compareLess(leftValue, rightRaw);
+            default   -> false;
+        };
     }
 
-    // -------------------------------------------------------
-    // 2. plusValueNette > 50 000 => suggestion surtaxe
-    // -------------------------------------------------------
-    @Test
-    void shouldTriggerPlusValueNetteSuggestion() {
+    private Object resolveVariable(String name, PviSimulationRequest req, PviSimulationResult result) {
+        return switch (name) {
+            case "plusValueBrute" -> result.getPlusValueBrute();
+            case "plusValueNette" -> result.getPlusValueNette();
+            case "impots"         -> result.getImpotsTotaux();
+            case "detentionAnnee" -> BigDecimal.valueOf(result.getDetentionAnnee());
 
-        // given
-        PropertyUsage usage = PropertyUsage.RESIDENCE_SECONDAIRE;
-        PropertyType type = PropertyType.APPARTEMENT;
-        PropertyOrigin origin = PropertyOrigin.ACHAT;
+            case "usageBien" -> req.usageBien() == null
+                    ? null
+                    : req.usageBien().name().toLowerCase().replace('_', '-');
 
-        int detentionYears = 10;
-        BigDecimal pvBrute = new BigDecimal("80000");
-        BigDecimal pvNette = new BigDecimal("60000");
-        BigDecimal impots = new BigDecimal("15000");
+            case "typeBien" -> req.typeBien() == null
+                    ? null
+                    : req.typeBien().name().toLowerCase();
 
-        PviSimulationRequest req = request(usage, type, origin);
-        PviSimulationResult res = result(detentionYears, pvBrute, pvNette, impots);
+            case "origineBien" -> req.origineBien() == null
+                    ? null
+                    : req.origineBien().name().toLowerCase();
 
-        // when
-        List<SuggestionVO> suggestions = engine.computeSuggestions(req, res);
-
-        // then
-        assertTrue(
-                suggestions.stream().anyMatch(s -> s.value().contains("surtaxe")),
-                "Une suggestion liée à la surtaxe devrait apparaître."
-        );
+            default -> null;
+        };
     }
 
-    // -------------------------------------------------------
-    // 3. usageBien == résidence-principale
-    // -------------------------------------------------------
-    @Test
-    void shouldTriggerSuggestionsForResidencePrincipale() {
+    private boolean compareEquals(Object left, String rightRaw) {
+        if (left == null) return false;
 
-        // given
-        PropertyUsage usage = PropertyUsage.RESIDENCE_PRINCIPALE;
-        PropertyType type = PropertyType.MAISON;
-        PropertyOrigin origin = PropertyOrigin.ACHAT;
+        if (left instanceof BigDecimal bd) {
+            try {
+                BigDecimal right = new BigDecimal(rightRaw);
+                return bd.compareTo(right) == 0;
+            } catch (NumberFormatException e) {
+                return false;
+            }
+        }
 
-        int detentionYears = 3;
-        BigDecimal pvBrute = new BigDecimal("30000");
-        BigDecimal pvNette = new BigDecimal("25000");
-        BigDecimal impots = new BigDecimal("5000");
-
-        PviSimulationRequest req = request(usage, type, origin);
-        PviSimulationResult res = result(detentionYears, pvBrute, pvNette, impots);
-
-        // when
-        List<SuggestionVO> suggestions = engine.computeSuggestions(req, res);
-
-        // then
-        assertTrue(
-                suggestions.stream().anyMatch(s ->
-                        s.value().contains("domicile conjugual")
-                                || s.value().contains("exonération reste acquise")
-                )
-        );
+        String leftStr = left.toString();
+        return leftStr.equalsIgnoreCase(rightRaw);
     }
 
-    // -------------------------------------------------------
-    // 4. usage RESIDENCE_SECONDAIRE OU LOCATION (condition OR)
-    // -------------------------------------------------------
-    @Test
-    void shouldMatchResidenceSecondaireOrLocation() {
-
-        // given
-        PropertyUsage usage = PropertyUsage.RESIDENCE_SECONDAIRE;
-        PropertyType type = PropertyType.MAISON;
-        PropertyOrigin origin = PropertyOrigin.ACHAT;
-
-        int detentionYears = 8;
-        BigDecimal pvBrute = new BigDecimal("40000");
-        BigDecimal pvNette = new BigDecimal("25000");
-        BigDecimal impots = new BigDecimal("7000");
-
-        PviSimulationRequest req = request(usage, type, origin);
-        PviSimulationResult res = result(detentionYears, pvBrute, pvNette, impots);
-
-        // when
-        List<SuggestionVO> suggestions = engine.computeSuggestions(req, res);
-
-        // then
-        assertTrue(
-                suggestions.stream().anyMatch(s ->
-                        s.value().contains("première cession d’un logement")
-                )
-        );
+    private boolean compareGreater(Object left, String rightRaw) {
+        if (!(left instanceof BigDecimal bd)) {
+            return false;
+        }
+        try {
+            BigDecimal right = new BigDecimal(rightRaw);
+            return bd.compareTo(right) > 0;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
-    // -------------------------------------------------------
-    // 5. détention > 30 ans => suggestion d'exonération totale
-    // -------------------------------------------------------
-    @Test
-    void shouldSuggestExonerationForMoreThan30Years() {
-
-        // given
-        PropertyUsage usage = PropertyUsage.RESIDENCE_SECONDAIRE;
-        PropertyType type = PropertyType.MAISON;
-        PropertyOrigin origin = PropertyOrigin.ACHAT;
-
-        int detentionYears = 31;
-        BigDecimal pvBrute = new BigDecimal("40000");
-        BigDecimal pvNette = new BigDecimal("30000");
-        BigDecimal impots = new BigDecimal("5000");
-
-        PviSimulationRequest req = request(usage, type, origin);
-        PviSimulationResult res = result(detentionYears, pvBrute, pvNette, impots);
-
-        // when
-        List<SuggestionVO> suggestions = engine.computeSuggestions(req, res);
-
-        // then
-        assertTrue(
-                suggestions.stream().anyMatch(s ->
-                        s.value().contains("exonération totale")
-                )
-        );
-    }
-
-    // -------------------------------------------------------
-    // 6. typeBien == terrain => TVA
-    // -------------------------------------------------------
-    @Test
-    void shouldSuggestTvaForTerrain() {
-
-        // given
-        PropertyUsage usage = PropertyUsage.RESIDENCE_SECONDAIRE;
-        PropertyType type = PropertyType.TERRAIN;
-        PropertyOrigin origin = PropertyOrigin.ACHAT;
-
-        int detentionYears = 5;
-        BigDecimal pvBrute = new BigDecimal("30000");
-        BigDecimal pvNette = new BigDecimal("20000");
-        BigDecimal impots = new BigDecimal("4000");
-
-        PviSimulationRequest req = request(usage, type, origin);
-        PviSimulationResult res = result(detentionYears, pvBrute, pvNette, impots);
-
-        // when
-        List<SuggestionVO> suggestions = engine.computeSuggestions(req, res);
-
-        // then
-        assertTrue(
-                suggestions.stream().anyMatch(s ->
-                        s.value().contains("TVA")
-                )
-        );
-    }
-
-    // -------------------------------------------------------
-    // 7. origineBien == donation
-    // -------------------------------------------------------
-    @Test
-    void shouldSuggestDonationRules() {
-
-        // given
-        PropertyUsage usage = PropertyUsage.RESIDENCE_SECONDAIRE;
-        PropertyType type = PropertyType.APPARTEMENT;
-        PropertyOrigin origin = PropertyOrigin.DONATION;
-
-        int detentionYears = 5;
-        BigDecimal pvBrute = new BigDecimal("40000");
-        BigDecimal pvNette = new BigDecimal("20000");
-        BigDecimal impots = new BigDecimal("5000");
-
-        PviSimulationRequest req = request(usage, type, origin);
-        PviSimulationResult res = result(detentionYears, pvBrute, pvNette, impots);
-
-        // when
-        List<SuggestionVO> suggestions = engine.computeSuggestions(req, res);
-
-        // then
-        assertTrue(
-                suggestions.stream().anyMatch(s ->
-                        s.value().contains("donation")
-                )
-        );
+    private boolean compareLess(Object left, String rightRaw) {
+        if (!(left instanceof BigDecimal bd)) {
+            return false;
+        }
+        try {
+            BigDecimal right = new BigDecimal(rightRaw);
+            return bd.compareTo(right) < 0;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 }
