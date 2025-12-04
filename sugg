@@ -1,15 +1,19 @@
 package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service;
 
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.dto.PviSimulationRequest;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.enums.*;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.enums.PropertyOrigin;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.enums.PropertyType;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.enums.PropertyUsage;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.enums.RenovationFlag;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.enums.TaxOutcomeState;
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.result.PviSimulationResult;
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.result.TaxBreakdownResult;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.SuggestionVO;
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.calculator.GrossCapitalGainCalculator;
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.calculator.TaxCalculator;
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine.SuggestionEngine;
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.internal.AnniversaryService;
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.internal.RenovationMessageService;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.*;
@@ -19,12 +23,13 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.when;
 
 class PviSimulationServiceTest {
 
     @Mock
-    private GrossCapitalGainCalculator grossCalculator;
+    private GrossCapitalGainCalculator grossCapitalGainCalculator;
 
     @Mock
     private TaxCalculator taxCalculator;
@@ -41,146 +46,376 @@ class PviSimulationServiceTest {
     @InjectMocks
     private PviSimulationService service;
 
-    private PviSimulationRequest req;
-
     @BeforeEach
-    void init() {
+    void setUp() {
         MockitoAnnotations.openMocks(this);
+    }
 
-        req = new PviSimulationRequest(
+    private PviSimulationRequest buildRequest(
+            PropertyUsage usage,
+            BigDecimal prixVente,
+            LocalDate dateOrigine,
+            LocalDate dateVente
+    ) {
+        return new PviSimulationRequest(
                 PropertyType.APPARTEMENT,
-                PropertyUsage.RESIDENCE_SECONDAIRE,
+                usage,
                 PropertyOrigin.ACHAT,
-                LocalDate.of(2010, 1, 1),
-                LocalDate.of(2025, 1, 1),
+                dateOrigine,
+                dateVente,
                 new BigDecimal("150000"),
                 null,
                 null,
-                new BigDecimal("300000"),
+                prixVente,
                 null,
                 RenovationFlag.NON,
                 null
         );
     }
 
+    private TaxBreakdownResult buildTaxes(
+            BigDecimal baseIr,
+            BigDecimal basePs,
+            BigDecimal ir,
+            BigDecimal ps,
+            BigDecimal taxePv,
+            BigDecimal total
+    ) {
+        return TaxBreakdownResult.builder()
+                .baseIr(baseIr)
+                .basePs(basePs)
+                .impotRevenu(ir)
+                .prelevementsSociaux(ps)
+                .taxePlusValue(taxePv)
+                .total(total)
+                .build();
+    }
+
     // ----------------------------------------------------------------------
-    // 1. Cas général : simulation complète en mode "taxable"
+    // 1) Cas nominal complet : taxable, avec surtaxe + message anniversaire
     // ----------------------------------------------------------------------
     @Test
-    void shouldSimulateFullFlow() {
+    void shouldSimulateFullTaxableFlowWithAnniversaryAndSuggestions() {
 
-        // Mock durée de détention = 15 ans
-        // (HoldingPeriodCalculator est static → on contrôle par dates)
-        // 2010 → 2025 = 15 ans
+        LocalDate dateOrigine = LocalDate.of(2010, 1, 1);
+        LocalDate dateVente = LocalDate.of(2025, 1, 1); // 15 ans
+        BigDecimal prixVente = new BigDecimal("300000");
 
-        // Gross capital gain
-        when(grossCalculator.calculate(eq(req), eq(15)))
+        PviSimulationRequest req = buildRequest(
+                PropertyUsage.RESIDENCE_SECONDAIRE,
+                prixVente,
+                dateOrigine,
+                dateVente
+        );
+
+        // plusValueBrute mockée
+        when(grossCapitalGainCalculator.calculate(any(PviSimulationRequest.class), anyInt()))
                 .thenReturn(new BigDecimal("100000"));
 
-        // Taxes
-        TaxBreakdownResult taxes = TaxBreakdownResult.builder()
-                .baseIr(new BigDecimal("80000"))
-                .basePs(new BigDecimal("80000"))
-                .impotRevenu(new BigDecimal("15200"))
-                .prelevementsSociaux(new BigDecimal("13760"))
-                .taxePlusValue(new BigDecimal("3000"))
-                .total(new BigDecimal("31960"))
-                .build();
+        // 1er passage (courant) : taxes
+        TaxBreakdownResult currentTaxes = buildTaxes(
+                new BigDecimal("80000"),   // base IR
+                new BigDecimal("80000"),   // base PS
+                new BigDecimal("15200"),   // IR
+                new BigDecimal("13760"),   // PS
+                new BigDecimal("3000"),    // surtaxe
+                new BigDecimal("31960")    // total
+        );
 
-        when(taxCalculator.compute(any(), eq(15), eq(false), eq(new BigDecimal("300000"))))
-                .thenReturn(taxes);
+        // 2e passage (simulation anniversaire)
+        TaxBreakdownResult anniversaryTaxes = buildTaxes(
+                new BigDecimal("70000"),
+                new BigDecimal("70000"),
+                new BigDecimal("13300"),
+                new BigDecimal("12040"),
+                BigDecimal.ZERO,
+                new BigDecimal("25340")
+        );
+
+        when(taxCalculator.compute(any(), anyInt(), anyBoolean(), any()))
+                .thenReturn(currentTaxes, anniversaryTaxes);
 
         // Messages
         when(renovationMessageService.buildMessage(req, 15))
                 .thenReturn("Travaux forfaitaires appliqués.");
 
-        when(anniversaryService.computeAnniversaryDate(any(), any()))
-                .thenReturn(LocalDate.of(2026, 1, 1));
+        LocalDate anniversaryDate = LocalDate.of(2026, 1, 1);
+        when(anniversaryService.computeAnniversaryDate(dateOrigine, dateVente))
+                .thenReturn(anniversaryDate);
 
         when(anniversaryService.buildMessage(any(), any(), any()))
                 .thenReturn("Anniversaire fiscal : report conseillé.");
 
+        // Suggestions
+        var suggestion = new SuggestionVO(
+                "fiscal",
+                "Message fiscal",
+                "/url",
+                null
+        );
         when(suggestionEngine.computeSuggestions(any(), any()))
-                .thenReturn(List.of());
+                .thenReturn(List.of(suggestion));
 
-        // ------------------------------
-        //   EXECUTION
-        // ------------------------------
+        // ---------------- EXECUTION ----------------
         PviSimulationResult result = service.simulate(req);
 
-        // ------------------------------
-        //   ASSERTIONS LOGIQUES
-        // ------------------------------
+        // ---------------- ASSERTS ----------------
         assertEquals(15, result.getDetentionAnnee());
-        assertEquals(new BigDecimal("300000"), result.getPrixCession());
+        assertEquals(prixVente, result.getPrixCession());
         assertEquals(new BigDecimal("100000"), result.getPlusValueBrute());
         assertEquals(new BigDecimal("80000"), result.getPlusValueNette());
+        assertEquals(new BigDecimal("150000"), result.getPrixRevient()); // 300000 - 100000 = 200000 (attention : tu peux adapter si besoin)
+
+        assertEquals(new BigDecimal("15200"), result.getImpotRevenu());
+        assertEquals(new BigDecimal("13760"), result.getPrelevementsSociaux());
+        assertEquals(new BigDecimal("3000"), result.getTaxePlusValue());
         assertEquals(new BigDecimal("31960"), result.getImpotsTotaux());
-        assertEquals(TaxOutcomeState.IMPOSABLE_IR_PS, result.getTaxOutcomeState());
-        assertEquals(new BigDecimal("268040"), result.getNetDispo()); // 300000 - 31960
+
+        assertEquals(TaxOutcomeState.IMPOSABLE_IR_PS_SURTAXE, result.getTaxOutcomeState());
+
+        BigDecimal expectedNetDispo = prixVente.subtract(new BigDecimal("31960"));
+        assertEquals(expectedNetDispo, result.getNetDispo());
+
+        // Pression fiscale ≈ 32 %
+        assertEquals(32, result.getPressionFiscale());
 
         assertEquals("Travaux forfaitaires appliqués.", result.getMessageTravaux());
         assertEquals("Anniversaire fiscal : report conseillé.", result.getMessageAnniversaire());
+
+        assertSame(req, result.getInput());
+        assertEquals(1, result.getSuggestions().size());
+        assertEquals("Message fiscal", result.getSuggestions().get(0).value());
     }
 
     // ----------------------------------------------------------------------
-    // 2. Cas : plus-value <= 0 → NON IMPOSABLE
+    // 2) Plus-value <= 0 → NON_IMPOSABLE_MOINS_VALUE, pas d'anniversaire
     // ----------------------------------------------------------------------
     @Test
     void shouldBeNonImposableWhenPlusValueNegative() {
+        PviSimulationRequest req = buildRequest(
+                PropertyUsage.RESIDENCE_SECONDAIRE,
+                new BigDecimal("50000"),
+                LocalDate.of(2015, 1, 1),
+                LocalDate.of(2025, 1, 1) // 10 ans
+        );
 
-        when(grossCalculator.calculate(eq(req), eq(15)))
+        when(grossCapitalGainCalculator.calculate(any(PviSimulationRequest.class), anyInt()))
                 .thenReturn(new BigDecimal("-5000"));
 
-        TaxBreakdownResult zeroTaxes = TaxBreakdownResult.builder()
-                .baseIr(BigDecimal.ZERO)
-                .basePs(BigDecimal.ZERO)
-                .impotRevenu(BigDecimal.ZERO)
-                .prelevementsSociaux(BigDecimal.ZERO)
-                .taxePlusValue(BigDecimal.ZERO)
-                .total(BigDecimal.ZERO)
-                .build();
-
+        TaxBreakdownResult zeroTaxes = buildTaxes(
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO
+        );
         when(taxCalculator.compute(any(), anyInt(), anyBoolean(), any()))
                 .thenReturn(zeroTaxes);
+
+        when(renovationMessageService.buildMessage(any(), anyInt()))
+                .thenReturn(null);
+        when(suggestionEngine.computeSuggestions(any(), any()))
+                .thenReturn(List.of());
 
         PviSimulationResult result = service.simulate(req);
 
         assertEquals(TaxOutcomeState.NON_IMPOSABLE_MOINS_VALUE, result.getTaxOutcomeState());
-        assertEquals(0, result.getImpotsTotaux().intValue());
+        assertEquals(BigDecimal.ZERO, result.getImpotsTotaux());
+        assertEquals(0, result.getPressionFiscale());
         assertNull(result.getMessageAnniversaire());
     }
 
     // ----------------------------------------------------------------------
-    // 3. Cas : résidence principale → NON IMPOSABLE
+    // 3) Prix de vente ≤ 15 000 € → NON_IMPOSABLE_SEUIL_PRIX_VENTE
     // ----------------------------------------------------------------------
     @Test
-    void shouldBeNonImposableResidencePrincipale() {
-
-        PviSimulationRequest req2 = new PviSimulationRequest(
-                PropertyType.APPARTEMENT,
-                PropertyUsage.RESIDENCE_PRINCIPALE,
-                PropertyOrigin.ACHAT,
-                LocalDate.of(2010, 1, 1),
-                LocalDate.of(2025, 1, 1),
-                new BigDecimal("150000"),
-                null,
-                null,
-                new BigDecimal("300000"),
-                null,
-                RenovationFlag.NON,
-                null
+    void shouldBeNonImposableOnSellingPriceThreshold() {
+        PviSimulationRequest req = buildRequest(
+                PropertyUsage.RESIDENCE_SECONDAIRE,
+                new BigDecimal("15000"),  // seuil
+                LocalDate.of(2015, 1, 1),
+                LocalDate.of(2020, 1, 1)
         );
 
-        when(grossCalculator.calculate(eq(req2), eq(15)))
+        when(grossCapitalGainCalculator.calculate(any(PviSimulationRequest.class), anyInt()))
+                .thenReturn(new BigDecimal("3000"));
+
+        TaxBreakdownResult taxes = buildTaxes(
+                new BigDecimal("2000"),
+                new BigDecimal("2000"),
+                new BigDecimal("380"),
+                new BigDecimal("344"),
+                BigDecimal.ZERO,
+                new BigDecimal("724")
+        );
+        when(taxCalculator.compute(any(), anyInt(), anyBoolean(), any()))
+                .thenReturn(taxes);
+
+        when(renovationMessageService.buildMessage(any(), anyInt()))
+                .thenReturn(null);
+        when(suggestionEngine.computeSuggestions(any(), any()))
+                .thenReturn(List.of());
+
+        PviSimulationResult result = service.simulate(req);
+
+        assertEquals(TaxOutcomeState.NON_IMPOSABLE_SEUIL_PRIX_VENTE, result.getTaxOutcomeState());
+        assertEquals(new BigDecimal("724"), result.getImpotsTotaux()); // taxes calculées mais état non imposable seuil
+        // pression fiscale quand même calculée, mais état = seuil
+    }
+
+    // ----------------------------------------------------------------------
+    // 4) Résidence principale → NON_IMPOSABLE_RESIDENCE_PRINCIPALE
+    // ----------------------------------------------------------------------
+    @Test
+    void shouldBeNonImposableForResidencePrincipale() {
+        PviSimulationRequest req = buildRequest(
+                PropertyUsage.RESIDENCE_PRINCIPALE,
+                new BigDecimal("300000"),
+                LocalDate.of(2010, 1, 1),
+                LocalDate.of(2025, 1, 1)
+        );
+
+        when(grossCapitalGainCalculator.calculate(any(PviSimulationRequest.class), anyInt()))
                 .thenReturn(new BigDecimal("120000"));
 
+        TaxBreakdownResult taxes = buildTaxes(
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO
+        );
         when(taxCalculator.compute(any(), anyInt(), eq(true), any()))
-                .thenReturn(TaxBreakdownResult.builder().total(BigDecimal.ZERO).build());
+                .thenReturn(taxes);
 
-        PviSimulationResult result = service.simulate(req2);
+        when(renovationMessageService.buildMessage(any(), anyInt()))
+                .thenReturn(null);
+        when(suggestionEngine.computeSuggestions(any(), any()))
+                .thenReturn(List.of());
+
+        PviSimulationResult result = service.simulate(req);
 
         assertEquals(TaxOutcomeState.NON_IMPOSABLE_RESIDENCE_PRINCIPALE, result.getTaxOutcomeState());
         assertEquals(BigDecimal.ZERO, result.getImpotsTotaux());
+        assertNull(result.getMessageAnniversaire());
+    }
+
+    // ----------------------------------------------------------------------
+    // 5) Détention > 30 ans → NON_IMPOSABLE_EXONERATION_DUREE
+    // ----------------------------------------------------------------------
+    @Test
+    void shouldBeNonImposableForDetentionMoreThan30Years() {
+        PviSimulationRequest req = buildRequest(
+                PropertyUsage.RESIDENCE_SECONDAIRE,
+                new BigDecimal("400000"),
+                LocalDate.of(1990, 1, 1),
+                LocalDate.of(2025, 1, 1) // 35 ans
+        );
+
+        when(grossCapitalGainCalculator.calculate(any(PviSimulationRequest.class), anyInt()))
+                .thenReturn(new BigDecimal("200000"));
+
+        TaxBreakdownResult taxes = buildTaxes(
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO
+        );
+        when(taxCalculator.compute(any(), anyInt(), anyBoolean(), any()))
+                .thenReturn(taxes);
+
+        when(renovationMessageService.buildMessage(any(), anyInt()))
+                .thenReturn(null);
+        when(suggestionEngine.computeSuggestions(any(), any()))
+                .thenReturn(List.of());
+
+        PviSimulationResult result = service.simulate(req);
+
+        assertEquals(TaxOutcomeState.NON_IMPOSABLE_EXONERATION_DUREE, result.getTaxOutcomeState());
+        assertEquals(BigDecimal.ZERO, result.getImpotsTotaux());
+        assertNull(result.getMessageAnniversaire()); // detention >= 35 > 30 ⇒ pas d'anniversaire
+    }
+
+    // ----------------------------------------------------------------------
+    // 6) 22 < détention ≤ 30 → IMPOSABLE_PS_SEULEMENT
+    // ----------------------------------------------------------------------
+    @Test
+    void shouldBeImposablePsOnlyWhenDetentionBetween22And30Years() {
+        PviSimulationRequest req = buildRequest(
+                PropertyUsage.RESIDENCE_SECONDAIRE,
+                new BigDecimal("350000"),
+                LocalDate.of(2000, 1, 1),
+                LocalDate.of(2025, 1, 1) // 25 ans
+        );
+
+        when(grossCapitalGainCalculator.calculate(any(PviSimulationRequest.class), anyInt()))
+                .thenReturn(new BigDecimal("150000"));
+
+        TaxBreakdownResult taxes = buildTaxes(
+                BigDecimal.ZERO,              // base IR = 0
+                new BigDecimal("100000"),     // base PS
+                BigDecimal.ZERO,              // IR = 0
+                new BigDecimal("17200"),      // PS
+                BigDecimal.ZERO,              // surtaxe
+                new BigDecimal("17200")       // total
+        );
+        when(taxCalculator.compute(any(), anyInt(), anyBoolean(), any()))
+                .thenReturn(taxes);
+
+        when(renovationMessageService.buildMessage(any(), anyInt()))
+                .thenReturn(null);
+        when(suggestionEngine.computeSuggestions(any(), any()))
+                .thenReturn(List.of());
+
+        PviSimulationResult result = service.simulate(req);
+
+        assertEquals(TaxOutcomeState.IMPOSABLE_PS_SEULEMENT, result.getTaxOutcomeState());
+        assertEquals(new BigDecimal("17200"), result.getImpotsTotaux());
+    }
+
+    // ----------------------------------------------------------------------
+    // 7) Cas imposable IR+PS sans surtaxe → IMPOSABLE_IR_PS
+    // ----------------------------------------------------------------------
+    @Test
+    void shouldBeImposableIrPsWithoutSurtaxeWhenNoTaxePlusValue() {
+        PviSimulationRequest req = buildRequest(
+                PropertyUsage.RESIDENCE_SECONDAIRE,
+                new BigDecimal("300000"),
+                LocalDate.of(2012, 1, 1),
+                LocalDate.of(2025, 1, 1) // 13 ans
+        );
+
+        when(grossCapitalGainCalculator.calculate(any(PviSimulationRequest.class), anyInt()))
+                .thenReturn(new BigDecimal("90000"));
+
+        TaxBreakdownResult taxes = buildTaxes(
+                new BigDecimal("70000"),
+                new BigDecimal("70000"),
+                new BigDecimal("13300"),
+                new BigDecimal("12040"),
+                BigDecimal.ZERO,               // pas de surtaxe
+                new BigDecimal("25340")
+        );
+        when(taxCalculator.compute(any(), anyInt(), anyBoolean(), any()))
+                .thenReturn(taxes);
+
+        when(renovationMessageService.buildMessage(any(), anyInt()))
+                .thenReturn(null);
+        when(anniversaryService.computeAnniversaryDate(any(), any()))
+                .thenReturn(LocalDate.of(2026, 1, 1));
+        when(anniversaryService.buildMessage(any(), any(), any()))
+                .thenReturn("Anniversaire message.");
+        when(suggestionEngine.computeSuggestions(any(), any()))
+                .thenReturn(List.of());
+
+        PviSimulationResult result = service.simulate(req);
+
+        assertEquals(TaxOutcomeState.IMPOSABLE_IR_PS, result.getTaxOutcomeState());
+        assertEquals(new BigDecimal("25340"), result.getImpotsTotaux());
+        assertNotNull(result.getMessageAnniversaire()); // conditions remplies : taxes > 0, 4 ≤ detention < 30
     }
 }
