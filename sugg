@@ -1,0 +1,275 @@
+package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine;
+
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.dto.PviSimulationRequest;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.enums.*;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.result.PviSimulationResult;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.result.TaxOutcomeState;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.SuggestionVO;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.*;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class SuggestionEngineRealDataTest {
+
+    private SuggestionEngine engine;
+
+    @BeforeEach
+    void setUp() throws Exception {
+        engine = new SuggestionEngine(new ObjectMapper());
+        engine.load();
+    }
+
+    // --------------------------
+    // Helpers
+    // --------------------------
+
+    private PviSimulationRequest request(PropertyUsage usage, PropertyType type, PropertyOrigin origin) {
+        return new PviSimulationRequest(
+                type,
+                usage,
+                origin,
+                LocalDate.of(2010, 1, 1),
+                LocalDate.of(2025, 1, 1),
+                new BigDecimal("150000"),
+                null,
+                null,
+                new BigDecimal("350000"),
+                null,
+                RenovationFlag.NON,
+                null
+        );
+    }
+
+    private PviSimulationResult result(
+            int detentionYears,
+            BigDecimal pvBrute,
+            BigDecimal pvNette,
+            BigDecimal impots
+    ) {
+        return PviSimulationResult.builder()
+                .detentionAnnee(detentionYears)
+                .plusValueBrute(pvBrute)
+                .plusValueNette(pvNette)
+                .impotsTotaux(impots)
+                .prixCession(new BigDecimal("350000"))
+                .prixRevient(new BigDecimal("150000"))
+                .impotRevenu(BigDecimal.ZERO)
+                .prelevementsSociaux(BigDecimal.ZERO)
+                .taxePlusValue(BigDecimal.ZERO)
+                .netDispo(BigDecimal.ZERO)
+                .pressionFiscale(0)
+                .taxOutcomeState(TaxOutcomeState.TAXABLE)
+                .build();
+    }
+
+    // -------------------------------------------------------
+    // 1. Vérifie que le JSON est bien chargé
+    // -------------------------------------------------------
+    @Test
+    void shouldLoadRealSuggestionJson() {
+
+        // given
+        PropertyUsage usage = PropertyUsage.RESIDENCE_SECONDAIRE;
+        PropertyType type = PropertyType.APPARTEMENT;
+        PropertyOrigin origin = PropertyOrigin.ACHAT;
+
+        int detentionYears = 10;
+        BigDecimal pvBrute = BigDecimal.ZERO;
+        BigDecimal pvNette = BigDecimal.ZERO;
+        BigDecimal impots = BigDecimal.ZERO;
+
+        PviSimulationRequest req = request(usage, type, origin);
+        PviSimulationResult res = result(detentionYears, pvBrute, pvNette, impots);
+
+        // when
+        List<SuggestionVO> suggestions = engine.computeSuggestions(req, res);
+
+        // then
+        assertTrue(suggestions.size() >= 1, "Le JSON réel devrait contenir au moins une suggestion.");
+    }
+
+    // -------------------------------------------------------
+    // 2. plusValueNette > 50 000 => suggestion surtaxe
+    // -------------------------------------------------------
+    @Test
+    void shouldTriggerPlusValueNetteSuggestion() {
+
+        // given
+        PropertyUsage usage = PropertyUsage.RESIDENCE_SECONDAIRE;
+        PropertyType type = PropertyType.APPARTEMENT;
+        PropertyOrigin origin = PropertyOrigin.ACHAT;
+
+        int detentionYears = 10;
+        BigDecimal pvBrute = new BigDecimal("80000");
+        BigDecimal pvNette = new BigDecimal("60000");
+        BigDecimal impots = new BigDecimal("15000");
+
+        PviSimulationRequest req = request(usage, type, origin);
+        PviSimulationResult res = result(detentionYears, pvBrute, pvNette, impots);
+
+        // when
+        List<SuggestionVO> suggestions = engine.computeSuggestions(req, res);
+
+        // then
+        assertTrue(
+                suggestions.stream().anyMatch(s -> s.value().contains("surtaxe")),
+                "Une suggestion liée à la surtaxe devrait apparaître."
+        );
+    }
+
+    // -------------------------------------------------------
+    // 3. usageBien == résidence-principale
+    // -------------------------------------------------------
+    @Test
+    void shouldTriggerSuggestionsForResidencePrincipale() {
+
+        // given
+        PropertyUsage usage = PropertyUsage.RESIDENCE_PRINCIPALE;
+        PropertyType type = PropertyType.MAISON;
+        PropertyOrigin origin = PropertyOrigin.ACHAT;
+
+        int detentionYears = 3;
+        BigDecimal pvBrute = new BigDecimal("30000");
+        BigDecimal pvNette = new BigDecimal("25000");
+        BigDecimal impots = new BigDecimal("5000");
+
+        PviSimulationRequest req = request(usage, type, origin);
+        PviSimulationResult res = result(detentionYears, pvBrute, pvNette, impots);
+
+        // when
+        List<SuggestionVO> suggestions = engine.computeSuggestions(req, res);
+
+        // then
+        assertTrue(
+                suggestions.stream().anyMatch(s ->
+                        s.value().contains("domicile conjugual")
+                                || s.value().contains("exonération reste acquise")
+                )
+        );
+    }
+
+    // -------------------------------------------------------
+    // 4. usage RESIDENCE_SECONDAIRE OU LOCATION (condition OR)
+    // -------------------------------------------------------
+    @Test
+    void shouldMatchResidenceSecondaireOrLocation() {
+
+        // given
+        PropertyUsage usage = PropertyUsage.RESIDENCE_SECONDAIRE;
+        PropertyType type = PropertyType.MAISON;
+        PropertyOrigin origin = PropertyOrigin.ACHAT;
+
+        int detentionYears = 8;
+        BigDecimal pvBrute = new BigDecimal("40000");
+        BigDecimal pvNette = new BigDecimal("25000");
+        BigDecimal impots = new BigDecimal("7000");
+
+        PviSimulationRequest req = request(usage, type, origin);
+        PviSimulationResult res = result(detentionYears, pvBrute, pvNette, impots);
+
+        // when
+        List<SuggestionVO> suggestions = engine.computeSuggestions(req, res);
+
+        // then
+        assertTrue(
+                suggestions.stream().anyMatch(s ->
+                        s.value().contains("première cession d’un logement")
+                )
+        );
+    }
+
+    // -------------------------------------------------------
+    // 5. détention > 30 ans => suggestion d'exonération totale
+    // -------------------------------------------------------
+    @Test
+    void shouldSuggestExonerationForMoreThan30Years() {
+
+        // given
+        PropertyUsage usage = PropertyUsage.RESIDENCE_SECONDAIRE;
+        PropertyType type = PropertyType.MAISON;
+        PropertyOrigin origin = PropertyOrigin.ACHAT;
+
+        int detentionYears = 31;
+        BigDecimal pvBrute = new BigDecimal("40000");
+        BigDecimal pvNette = new BigDecimal("30000");
+        BigDecimal impots = new BigDecimal("5000");
+
+        PviSimulationRequest req = request(usage, type, origin);
+        PviSimulationResult res = result(detentionYears, pvBrute, pvNette, impots);
+
+        // when
+        List<SuggestionVO> suggestions = engine.computeSuggestions(req, res);
+
+        // then
+        assertTrue(
+                suggestions.stream().anyMatch(s ->
+                        s.value().contains("exonération totale")
+                )
+        );
+    }
+
+    // -------------------------------------------------------
+    // 6. typeBien == terrain => TVA
+    // -------------------------------------------------------
+    @Test
+    void shouldSuggestTvaForTerrain() {
+
+        // given
+        PropertyUsage usage = PropertyUsage.RESIDENCE_SECONDAIRE;
+        PropertyType type = PropertyType.TERRAIN;
+        PropertyOrigin origin = PropertyOrigin.ACHAT;
+
+        int detentionYears = 5;
+        BigDecimal pvBrute = new BigDecimal("30000");
+        BigDecimal pvNette = new BigDecimal("20000");
+        BigDecimal impots = new BigDecimal("4000");
+
+        PviSimulationRequest req = request(usage, type, origin);
+        PviSimulationResult res = result(detentionYears, pvBrute, pvNette, impots);
+
+        // when
+        List<SuggestionVO> suggestions = engine.computeSuggestions(req, res);
+
+        // then
+        assertTrue(
+                suggestions.stream().anyMatch(s ->
+                        s.value().contains("TVA")
+                )
+        );
+    }
+
+    // -------------------------------------------------------
+    // 7. origineBien == donation
+    // -------------------------------------------------------
+    @Test
+    void shouldSuggestDonationRules() {
+
+        // given
+        PropertyUsage usage = PropertyUsage.RESIDENCE_SECONDAIRE;
+        PropertyType type = PropertyType.APPARTEMENT;
+        PropertyOrigin origin = PropertyOrigin.DONATION;
+
+        int detentionYears = 5;
+        BigDecimal pvBrute = new BigDecimal("40000");
+        BigDecimal pvNette = new BigDecimal("20000");
+        BigDecimal impots = new BigDecimal("5000");
+
+        PviSimulationRequest req = request(usage, type, origin);
+        PviSimulationResult res = result(detentionYears, pvBrute, pvNette, impots);
+
+        // when
+        List<SuggestionVO> suggestions = engine.computeSuggestions(req, res);
+
+        // then
+        assertTrue(
+                suggestions.stream().anyMatch(s ->
+                        s.value().contains("donation")
+                )
+        );
+    }
+}
