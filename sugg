@@ -1,467 +1,158 @@
-package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo;
-
-import java.util.Map;
-
-public record SuggestionVO(
-    String category,              // "general", "financier", "juridique", "fiscal"
-    String value,                 // code de texte : ex "PVI_SUGG_FISCAL_01_VALUE"
-    String url,                   // code d'URL : ex "PVI_SUGG_FISCAL_01_URL"
-    Map<String, Object> condition // structure de la condition (arbre AND/OR, etc.)
-) {}
-
-
-
 package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config;
 
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.CapitalGainTaxBracketVO;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.DeductionRateVO;
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.DeductionYearVO;
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.SuggestionVO;
-import lombok.Getter;
-import lombok.Setter;
-import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.stereotype.Component;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
-@Getter
-@Setter
-@Component
-@ConfigurationProperties(prefix = "pvi")
-public class PviBusinessProperties {
+import static org.junit.jupiter.api.Assertions.*;
 
-    /**
-     * Map : nombre d'années de détention -> DeductionYearVO (IR / PS)
-     * Source : pvi.deductionsByYear
-     */
-    private Map<Integer, DeductionYearVO> deductionsByYear;
+/**
+ * Test d’intégration léger pour vérifier que :
+ * - le YAML pvi.* est bien bindé dans PviBusinessProperties
+ * - les noms de propriétés sont cohérents avec les VO
+ */
+@SpringBootTest
+class PviBusinessPropertiesTest {
 
-    /**
-     * Tranches de surtaxe sur la plus-value (surtaxe PVI).
-     * Source : pvi.capitalGainSurtaxBrackets
-     */
-    private List<CapitalGainTaxBracketVO> capitalGainSurtaxBrackets;
+    @Autowired
+    private PviBusinessProperties pviBusinessProperties;
 
-    /**
-     * Suggestions (général, financier, juridique, fiscal).
-     * Source : pvi.suggestion
-     */
-    private SuggestionProperties suggestion;
+    @Test
+    void contextLoads_andPropertiesAreNotNull() {
+        assertNotNull(pviBusinessProperties, "PviBusinessProperties should be injected");
+        assertNotNull(pviBusinessProperties.getDeductionsByYear(), "deductionsByYear should not be null");
+        assertNotNull(pviBusinessProperties.getCapitalGainSurtaxBrackets(), "capitalGainSurtaxBrackets should not be null");
+        assertNotNull(pviBusinessProperties.getSuggestion(), "suggestion block should not be null");
+    }
 
-    @Getter
-    @Setter
-    public static class SuggestionProperties {
-        /** Nombre max de suggestions à afficher. */
-        private int show;
+    @Test
+    void shouldBindDeductionsByYearFromYaml() {
+        Map<Integer, DeductionYearVO> map = pviBusinessProperties.getDeductionsByYear();
+        assertFalse(map.isEmpty(), "deductionsByYear should not be empty");
 
-        /**
-         * Map : catégorie -> liste de SuggestionVO.
-         * Catégories typiques : general, financier, juridique, fiscal
-         */
-        private Map<String, List<SuggestionVO>> suggestions;
+        // Exemple : année 6
+        DeductionYearVO year6 = map.get(6);
+        assertNotNull(year6, "Year 6 should be present");
+
+        DeductionRateVO ir6 = year6.IR();
+        DeductionRateVO ps6 = year6.PS();
+
+        assertNotNull(ir6, "IR for year 6 should not be null");
+        assertNotNull(ps6, "PS for year 6 should not be null");
+
+        assertEquals(new BigDecimal("6"), ir6.tauxAnnuel());
+        assertEquals(new BigDecimal("6"), ir6.tauxAbattementGlobal());
+
+        assertEquals(new BigDecimal("1.65"), ps6.tauxAnnuel());
+        assertEquals(new BigDecimal("1.65"), ps6.tauxAbattementGlobal());
+
+        // Exemple : année 22 (IR 4 / 100, PS 1.6 / 28)
+        DeductionYearVO year22 = map.get(22);
+        assertNotNull(year22, "Year 22 should be present");
+
+        DeductionRateVO ir22 = year22.IR();
+        DeductionRateVO ps22 = year22.PS();
+
+        assertEquals(new BigDecimal("4"), ir22.tauxAnnuel());
+        assertEquals(new BigDecimal("100"), ir22.tauxAbattementGlobal());
+
+        assertEquals(new BigDecimal("1.6"), ps22.tauxAnnuel());
+        assertEquals(new BigDecimal("28"), ps22.tauxAbattementGlobal());
+
+        // Exemple : année 30 (IR null / 100, PS 9 / 100)
+        DeductionYearVO year30 = map.get(30);
+        assertNotNull(year30, "Year 30 should be present");
+
+        DeductionRateVO ir30 = year30.IR();
+        DeductionRateVO ps30 = year30.PS();
+
+        assertNull(ir30.tauxAnnuel(), "IR tauxAnnuel for year 30 should be null");
+        assertEquals(new BigDecimal("100"), ir30.tauxAbattementGlobal());
+
+        assertEquals(new BigDecimal("9"), ps30.tauxAnnuel());
+        assertEquals(new BigDecimal("100"), ps30.tauxAbattementGlobal());
+    }
+
+    @Test
+    void shouldBindCapitalGainSurtaxBracketsFromYaml() {
+        List<CapitalGainTaxBracketVO> brackets = pviBusinessProperties.getCapitalGainSurtaxBrackets();
+        assertNotNull(brackets, "capitalGainSurtaxBrackets should not be null");
+        assertEquals(11, brackets.size(), "There should be 11 surtax brackets");
+
+        // Première tranche : 0 -> 50 000, 0 %
+        CapitalGainTaxBracketVO first = brackets.get(0);
+        assertEquals(new BigDecimal("0"), first.min());
+        assertEquals(new BigDecimal("50000"), first.max());
+        assertEquals(new BigDecimal("0"), first.pourcentagePlusValue());
+        assertNull(first.rapport(), "First bracket rapport should be null");
+
+        // Tranche avec rapport 0.05 : 50 001 -> 60 000, 2 %
+        CapitalGainTaxBracketVO second = brackets.get(1);
+        assertEquals(new BigDecimal("50001"), second.min());
+        assertEquals(new BigDecimal("60000"), second.max());
+        assertEquals(new BigDecimal("2"), second.pourcentagePlusValue());
+        assertEquals(new BigDecimal("0.05"), second.rapport());
+
+        // Dernière tranche : 260001 -> +∞, 6 %
+        CapitalGainTaxBracketVO last = brackets.get(brackets.size() - 1);
+        assertEquals(new BigDecimal("260001"), last.min());
+        assertNull(last.max(), "Last bracket max should be null (open upper bound)");
+        assertEquals(new BigDecimal("6"), last.pourcentagePlusValue());
+        assertNull(last.rapport(), "Last bracket rapport should be null");
+    }
+
+    @Test
+    void shouldBindSuggestionsFromYaml() {
+        PviBusinessProperties.SuggestionProperties suggestionProps = pviBusinessProperties.getSuggestion();
+        assertNotNull(suggestionProps, "SuggestionProperties should not be null");
+
+        assertEquals(4, suggestionProps.getShow(), "show should be 4");
+
+        Map<String, List<SuggestionVO>> suggestionsByCategory = suggestionProps.getSuggestions();
+        assertNotNull(suggestionsByCategory, "suggestions map should not be null");
+
+        assertTrue(suggestionsByCategory.containsKey("general"));
+        assertTrue(suggestionsByCategory.containsKey("financier"));
+        assertTrue(suggestionsByCategory.containsKey("juridique"));
+        assertTrue(suggestionsByCategory.containsKey("fiscal"));
+
+        // Exemple : une suggestion générale
+        List<SuggestionVO> generalList = suggestionsByCategory.get("general");
+        assertNotNull(generalList);
+        assertFalse(generalList.isEmpty());
+
+        SuggestionVO general1 = generalList.get(0);
+        assertEquals("general", general1.category());
+        assertEquals("PVI_SUGG_GENERAL_01_VALUE", general1.value());
+        assertEquals("PVI_SUGG_GENERAL_01_URL", general1.url());
+        assertNotNull(general1.condition(), "General suggestion 1 should have a condition map");
+
+        // Exemple : suggestion fiscale avec condition complexe (OR)
+        List<SuggestionVO> fiscalList = suggestionsByCategory.get("fiscal");
+        assertNotNull(fiscalList);
+        assertFalse(fiscalList.isEmpty());
+
+        // On cherche celle qui correspond au code PVI_SUGG_FISCAL_05_VALUE
+        SuggestionVO complexCondition = fiscalList.stream()
+                .filter(s -> "PVI_SUGG_FISCAL_05_VALUE".equals(s.value()))
+                .findFirst()
+                .orElse(null);
+
+        assertNotNull(complexCondition, "Complex fiscal suggestion should be present");
+        assertEquals("fiscal", complexCondition.category());
+        assertEquals("PVI_SUGG_FISCAL_05_URL", complexCondition.url());
+
+        Map<String, Object> condition = complexCondition.condition();
+        assertNotNull(condition, "Condition map should not be null");
+        assertTrue(condition.containsKey("operator"));
+        assertEquals("||", condition.get("operator"));
     }
 }
-
-
-
-pvi:
-  # ================= ABATTEMENT (abattement.json) ==================
-  deductionsByYear:
-    "0":
-      ir:
-        tauxAnnuel: 0
-        tauxAbattementGlobal: 0
-      ps:
-        tauxAnnuel: 0
-        tauxAbattementGlobal: 0
-    "1":
-      ir:
-        tauxAnnuel: 0
-        tauxAbattementGlobal: 0
-      ps:
-        tauxAnnuel: 0
-        tauxAbattementGlobal: 0
-    "2":
-      ir:
-        tauxAnnuel: 0
-        tauxAbattementGlobal: 0
-      ps:
-        tauxAnnuel: 0
-        tauxAbattementGlobal: 0
-    "3":
-      ir:
-        tauxAnnuel: 0
-        tauxAbattementGlobal: 0
-      ps:
-        tauxAnnuel: 0
-        tauxAbattementGlobal: 0
-    "4":
-      ir:
-        tauxAnnuel: 0
-        tauxAbattementGlobal: 0
-      ps:
-        tauxAnnuel: 0
-        tauxAbattementGlobal: 0
-    "5":
-      ir:
-        tauxAnnuel: 0
-        tauxAbattementGlobal: 0
-      ps:
-        tauxAnnuel: 0
-        tauxAbattementGlobal: 0
-    "6":
-      ir:
-        tauxAnnuel: 6
-        tauxAbattementGlobal: 6
-      ps:
-        tauxAnnuel: 1.65
-        tauxAbattementGlobal: 1.65
-    "7":
-      ir:
-        tauxAnnuel: 6
-        tauxAbattementGlobal: 12
-      ps:
-        tauxAnnuel: 1.65
-        tauxAbattementGlobal: 3.3
-    "8":
-      ir:
-        tauxAnnuel: 6
-        tauxAbattementGlobal: 18
-      ps:
-        tauxAnnuel: 1.65
-        tauxAbattementGlobal: 4.95
-    "9":
-      ir:
-        tauxAnnuel: 6
-        tauxAbattementGlobal: 24
-      ps:
-        tauxAnnuel: 1.65
-        tauxAbattementGlobal: 6.6
-    "10":
-      ir:
-        tauxAnnuel: 6
-        tauxAbattementGlobal: 30
-      ps:
-        tauxAnnuel: 1.64
-        tauxAbattementGlobal: 8.25
-    "11":
-      ir:
-        tauxAnnuel: 6
-        tauxAbattementGlobal: 36
-      ps:
-        tauxAnnuel: 1.65
-        tauxAbattementGlobal: 9.9
-    "12":
-      ir:
-        tauxAnnuel: 6
-        tauxAbattementGlobal: 42
-      ps:
-        tauxAnnuel: 1.65
-        tauxAbattementGlobal: 11.55
-    "13":
-      ir:
-        tauxAnnuel: 6
-        tauxAbattementGlobal: 48
-      ps:
-        tauxAnnuel: 1.65
-        tauxAbattementGlobal: 13.2
-    "14":
-      ir:
-        tauxAnnuel: 6
-        tauxAbattementGlobal: 54
-      ps:
-        tauxAnnuel: 1.65
-        tauxAbattementGlobal: 14.85
-    "15":
-      ir:
-        tauxAnnuel: 6
-        tauxAbattementGlobal: 60
-      ps:
-        tauxAnnuel: 1.65
-        tauxAbattementGlobal: 16.5
-    "16":
-      ir:
-        tauxAnnuel: 6
-        tauxAbattementGlobal: 66
-      ps:
-        tauxAnnuel: 1.65
-        tauxAbattementGlobal: 18.15
-    "17":
-      ir:
-        tauxAnnuel: 6
-        tauxAbattementGlobal: 72
-      ps:
-        tauxAnnuel: 1.65
-        tauxAbattementGlobal: 19.8
-    "18":
-      ir:
-        tauxAnnuel: 6
-        tauxAbattementGlobal: 78
-      ps:
-        tauxAnnuel: 1.65
-        tauxAbattementGlobal: 21.45
-    "19":
-      ir:
-        tauxAnnuel: 6
-        tauxAbattementGlobal: 84
-      ps:
-        tauxAnnuel: 1.65
-        tauxAbattementGlobal: 23.1
-    "20":
-      ir:
-        tauxAnnuel: 6
-        tauxAbattementGlobal: 90
-      ps:
-        tauxAnnuel: 1.65
-        tauxAbattementGlobal: 24.75
-    "21":
-      ir:
-        tauxAnnuel: 6
-        tauxAbattementGlobal: 96
-      ps:
-        tauxAnnuel: 1.65
-        tauxAbattementGlobal: 26.4
-    "22":
-      ir:
-        tauxAnnuel: 4
-        tauxAbattementGlobal: 100
-      ps:
-        tauxAnnuel: 1.6
-        tauxAbattementGlobal: 28
-    "23":
-      ir:
-        tauxAnnuel: null
-        tauxAbattementGlobal: 100
-      ps:
-        tauxAnnuel: 9
-        tauxAbattementGlobal: 37
-    "24":
-      ir:
-        tauxAnnuel: null
-        tauxAbattementGlobal: 100
-      ps:
-        tauxAnnuel: 9
-        tauxAbattementGlobal: 46
-    "25":
-      ir:
-        tauxAnnuel: null
-        tauxAbattementGlobal: 100
-      ps:
-        tauxAnnuel: 9
-        tauxAbattementGlobal: 55
-    "26":
-      ir:
-        tauxAnnuel: null
-        tauxAbattementGlobal: 100
-      ps:
-        tauxAnnuel: 9
-        tauxAbattementGlobal: 64
-    "27":
-      ir:
-        tauxAnnuel: null
-        tauxAbattementGlobal: 100
-      ps:
-        tauxAnnuel: 9
-        tauxAbattementGlobal: 73
-    "28":
-      ir:
-        tauxAnnuel: null
-        tauxAbattementGlobal: 100
-      ps:
-        tauxAnnuel: 9
-        tauxAbattementGlobal: 82
-    "29":
-      ir:
-        tauxAnnuel: null
-        tauxAbattementGlobal: 100
-      ps:
-        tauxAnnuel: 9
-        tauxAbattementGlobal: 91
-    "30":
-      ir:
-        tauxAnnuel: null
-        tauxAbattementGlobal: 100
-      ps:
-        tauxAnnuel: 9
-        tauxAbattementGlobal: 100
-
-  # =============== SURTAXE PVI (texe-pvi.json) =====================
-  capitalGainSurtaxBrackets:
-    - min: 0
-      max: 50000
-      pourcentagePlusValue: 0
-    - min: 50001
-      max: 60000
-      pourcentagePlusValue: 2
-      rapport: 0.05
-    - min: 60001
-      max: 100000
-      pourcentagePlusValue: 2
-    - min: 100001
-      max: 110000
-      pourcentagePlusValue: 3
-      rapport: 0.1
-    - min: 110001
-      max: 150000
-      pourcentagePlusValue: 3
-    - min: 150001
-      max: 160000
-      pourcentagePlusValue: 4
-      rapport: 0.15
-    - min: 160001
-      max: 200000
-      pourcentagePlusValue: 4
-    - min: 200001
-      max: 210000
-      pourcentagePlusValue: 5
-      rapport: 0.2
-    - min: 210001
-      max: 250000
-      pourcentagePlusValue: 5
-    - min: 250001
-      max: 260000
-      pourcentagePlusValue: 6
-      rapport: 0.25
-    - min: 260001
-      pourcentagePlusValue: 6
-
-  # ================= SUGGESTIONS (suggestion.json) =================
-  suggestion:
-    show: 4
-    suggestions:
-
-      general:
-        - category: general
-          value: PVI_SUGG_GENERAL_01_VALUE
-          url: PVI_SUGG_GENERAL_01_URL
-          condition:
-            part1: taxableCapitalGain
-            operator: ">"
-            part2: 50000
-
-      financier:
-        - category: financier
-          value: PVI_SUGG_FINANCIER_01_VALUE
-          url: PVI_SUGG_FINANCIER_01_URL
-          condition:
-            part1: impots
-            operator: ">"
-            part2: 0
-
-      juridique:
-        - category: juridique
-          value: PVI_SUGG_JURIDIQUE_01_VALUE
-          url: PVI_SUGG_JURIDIQUE_01_URL
-        - category: juridique
-          value: PVI_SUGG_JURIDIQUE_02_VALUE
-          url: PVI_SUGG_JURIDIQUE_02_URL
-          condition:
-            part1: propertyUse
-            operator: "=="
-            part2: primary-residence
-        - category: juridique
-          value: PVI_SUGG_JURIDIQUE_03_VALUE
-          url: PVI_SUGG_JURIDIQUE_03_URL
-        - category: juridique
-          value: PVI_SUGG_JURIDIQUE_04_VALUE
-          url: PVI_SUGG_JURIDIQUE_04_URL
-          condition:
-            part1: propertyUse
-            operator: "=="
-            part2: primary-residence
-
-      fiscal:
-        - category: fiscal
-          value: PVI_SUGG_FISCAL_01_VALUE
-          url: PVI_SUGG_FISCAL_01_URL
-          condition:
-            part1: propertyUse
-            operator: "=="
-            part2: primary-residence
-        - category: fiscal
-          value: PVI_SUGG_FISCAL_02_VALUE
-          url: PVI_SUGG_FISCAL_02_URL
-          condition:
-            part1: grossCapitalGain
-            operator: ">"
-            part2: 0
-        - category: fiscal
-          value: PVI_SUGG_FISCAL_03_VALUE
-          url: PVI_SUGG_FISCAL_03_URL
-          condition:
-            part1: taxableCapitalGain
-            operator: ">"
-            part2: 0
-        - category: fiscal
-          value: PVI_SUGG_FISCAL_04_VALUE
-          url: PVI_SUGG_FISCAL_04_URL
-          condition:
-            part1: taxableCapitalGain
-            operator: ">"
-            part2: 0
-        - category: fiscal
-          value: PVI_SUGG_FISCAL_05_VALUE
-          url: PVI_SUGG_FISCAL_05_URL
-          condition:
-            part1:
-              part1: propertyUse
-              operator: "=="
-              part2: secondary-residence
-            operator: "||"
-            part2:
-              part1: propertyUse
-              operator: "=="
-              part2: location
-        - category: fiscal
-          value: PVI_SUGG_FISCAL_06_VALUE
-          url: PVI_SUGG_FISCAL_06_URL
-          condition:
-            part1: holdingPeriodYears
-            operator: ">"
-            part2: 30
-        - category: fiscal
-          value: PVI_SUGG_FISCAL_07_VALUE
-          url: PVI_SUGG_FISCAL_07_URL
-          condition:
-            part1: holdingPeriodYears
-            operator: ">"
-            part2: 22
-        - category: fiscal
-          value: PVI_SUGG_FISCAL_08_VALUE
-          url: PVI_SUGG_FISCAL_08_URL
-        - category: fiscal
-          value: PVI_SUGG_FISCAL_09_VALUE
-          url: PVI_SUGG_FISCAL_09_URL
-          condition:
-            part1: grossCapitalGain
-            operator: "<"
-            part2: 0
-        - category: fiscal
-          value: PVI_SUGG_FISCAL_10_VALUE
-          url: PVI_SUGG_FISCAL_10_URL
-        - category: fiscal
-          value: PVI_SUGG_FISCAL_11_VALUE
-          url: PVI_SUGG_FISCAL_11_URL
-          condition:
-            part1: propertyType
-            operator: "=="
-            part2: land
-        - category: fiscal
-          value: PVI_SUGG_FISCAL_12_VALUE
-          url: PVI_SUGG_FISCAL_12_URL
-          condition:
-            part1: acquisitionOrigin
-            operator: "=="
-            part2: gift
-        - category: fiscal
-          value: PVI_SUGG_FISCAL_13_VALUE
-          url: PVI_SUGG_FISCAL_13_URL
-        - category: fiscal
-          value: PVI_SUGG_FISCAL_14_VALUE
-          url: PVI_SUGG_FISCAL_14_URL
-
-
-
-
-
-
