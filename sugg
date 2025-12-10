@@ -1,96 +1,80 @@
 package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.calculator;
 
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config.PviBusinessProperties;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.CapitalGainTaxBracketVO;
-import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
 
-@Service
-@RequiredArgsConstructor
-public class CapitalGainTaxCalculator {
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
-    /**
-     * Configuration métier PVI (chargée depuis application.yml).
-     */
-    private final PviBusinessProperties pviBusinessProperties;
+/**
+ * Test d'intégration "données réelles" :
+ * - utilise le bean Spring CapitalGainTaxCalculator
+ * - les tranches sont chargées depuis application.yml (pvi.capitalGainSurtaxBrackets)
+ * - vérifie que les résultats sont identiques à l'ancien calcul basé sur le JSON.
+ */
+@SpringBootTest
+class CapitalGainTaxCalculatorRealDataTest {
 
-    /**
-     * Liste interne des tranches, triée par min.
-     */
-    private final List<CapitalGainTaxBracketVO> brackets = new ArrayList<>();
+    @Autowired
+    private CapitalGainTaxCalculator calculator;
 
-    /**
-     * Initialisation après injection : on récupère les tranches depuis
-     * PviBusinessProperties et on les trie par borne minimale.
-     */
-    @PostConstruct
-    public void init() {
-        List<CapitalGainTaxBracketVO> fromConfig = pviBusinessProperties.getCapitalGainSurtaxBrackets();
-        brackets.clear();
-        if (fromConfig != null) {
-            brackets.addAll(fromConfig);
-            brackets.sort(Comparator.comparing(CapitalGainTaxBracketVO::min));
-        }
+    @Test
+    void shouldReturnZeroWhenPlusValueIsNullOrNonPositive() {
+        assertEquals(new BigDecimal("0"), calculator.computeCapitalGainSurtax(null));
+        assertEquals(new BigDecimal("0"), calculator.computeCapitalGainSurtax(new BigDecimal("0")));
+        assertEquals(new BigDecimal("0"), calculator.computeCapitalGainSurtax(new BigDecimal("-1000")));
     }
 
-    /**
-     * Calcule la surtaxe sur la plus-value imposable (plusValueIR).
-     * Si plusValueIR est nulle, négative ou aucune tranche ne matche, retourne 0.
-     */
-    public BigDecimal computeCapitalGainSurtax(BigDecimal plusValueIR) {
-        if (plusValueIR == null || plusValueIR.signum() <= 0) {
-            return BigDecimal.ZERO;
-        }
-        if (brackets.isEmpty()) {
-            // Config non présente / mal chargée : on préfère renvoyer 0 plutôt que planter.
-            return BigDecimal.ZERO;
-        }
+    @Test
+    void shouldUseFirstBracketWithZeroPercent() {
+        BigDecimal tax1 = calculator.computeCapitalGainSurtax(new BigDecimal("30000"));
+        BigDecimal tax2 = calculator.computeCapitalGainSurtax(new BigDecimal("50000"));
 
-        for (CapitalGainTaxBracketVO b : brackets) {
-            boolean match;
-            if (b.max() != null) {
-                match = plusValueIR.compareTo(b.min()) >= 0
-                        && plusValueIR.compareTo(b.max()) <= 0;
-            } else {
-                // Dernière tranche ouverte : min <= plusValueIR < +∞
-                match = plusValueIR.compareTo(b.min()) >= 0;
-            }
-
-            if (match) {
-                return computeBracketTax(b, plusValueIR);
-            }
-        }
-
-        return BigDecimal.ZERO;
+        assertEquals(new BigDecimal("0"), tax1);
+        assertEquals(new BigDecimal("0"), tax2);
     }
 
-    /**
-     * Applique la formule de calcul de la surtaxe pour une tranche donnée :
-     *   percentTerm  = (pourcentagePlusValue / 100) * plusValueIR
-     *   rapportTerm  = (max - plusValueIR) * rapport   (si max et rapport non nuls)
-     *   surtaxe      = (percentTerm - rapportTerm) arrondi à l'euro le plus proche.
-     */
-    private BigDecimal computeBracketTax(CapitalGainTaxBracketVO b, BigDecimal plusValueIR) {
-        BigDecimal percentTerm = b.pourcentagePlusValue()
-                .divide(new BigDecimal("100"))
-                .multiply(plusValueIR);
+    @Test
+    void shouldUseBracketWithRapportBetween50001And60000() {
+        BigDecimal taxAtMin = calculator.computeCapitalGainSurtax(new BigDecimal("50001"));
+        BigDecimal taxMid   = calculator.computeCapitalGainSurtax(new BigDecimal("55000"));
+        BigDecimal taxMax   = calculator.computeCapitalGainSurtax(new BigDecimal("60000"));
 
-        BigDecimal rapportTerm = BigDecimal.ZERO;
-        if (b.max() != null && b.rapport() != null) {
-            rapportTerm = b.max()
-                    .subtract(plusValueIR)
-                    .multiply(b.rapport());
-        }
+        assertEquals(new BigDecimal("500"), taxAtMin);
+        assertEquals(new BigDecimal("850"), taxMid);
+        assertEquals(new BigDecimal("1200"), taxMax);
+    }
 
-        return percentTerm
-                .subtract(rapportTerm)
-                .setScale(0, RoundingMode.HALF_UP);
+    @Test
+    void shouldUseBracketWithoutRapportBetween60001And100000() {
+        BigDecimal taxAtMin = calculator.computeCapitalGainSurtax(new BigDecimal("60001"));
+        BigDecimal taxMid   = calculator.computeCapitalGainSurtax(new BigDecimal("80000"));
+        BigDecimal taxMax   = calculator.computeCapitalGainSurtax(new BigDecimal("100000"));
+
+        assertEquals(new BigDecimal("1200"), taxAtMin);
+        assertEquals(new BigDecimal("1600"), taxMid);
+        assertEquals(new BigDecimal("2000"), taxMax);
+    }
+
+    @Test
+    void shouldUseBracketWithRapportBetween150001And160000() {
+        BigDecimal taxAtMin = calculator.computeCapitalGainSurtax(new BigDecimal("150001"));
+        BigDecimal taxMid   = calculator.computeCapitalGainSurtax(new BigDecimal("155000"));
+        BigDecimal taxMax   = calculator.computeCapitalGainSurtax(new BigDecimal("160000"));
+
+        assertEquals(new BigDecimal("4500"), taxAtMin);
+        assertEquals(new BigDecimal("5450"), taxMid);
+        assertEquals(new BigDecimal("6400"), taxMax);
+    }
+
+    @Test
+    void shouldUseOpenEndedLastBracketForValuesAbove260000() {
+        BigDecimal taxAtBorder = calculator.computeCapitalGainSurtax(new BigDecimal("260001"));
+        BigDecimal taxHigh     = calculator.computeCapitalGainSurtax(new BigDecimal("300000"));
+
+        assertEquals(new BigDecimal("15600"), taxAtBorder);
+        assertEquals(new BigDecimal("18000"), taxHigh);
     }
 }
