@@ -1,164 +1,227 @@
-package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.calculator;
+package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine;
 
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config.PviBusinessProperties;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.DeductionRateVO;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.DeductionYearVO;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.dto.PviSimulationRequest;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.result.PviSimulationResult;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.SuggestionVO;
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
+import lombok.Setter;
+import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.util.HashMap;
-import java.util.Map;
+import java.security.SecureRandom;
+import java.util.*;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.when;
+@Service
+@RequiredArgsConstructor
+public class SuggestionEngine {
 
-@ExtendWith(MockitoExtension.class)
-class DeductionCalculatorRealDataTest {
+    private final PviBusinessProperties pviBusinessProperties;
 
-    @Mock
-    private PviBusinessProperties pviBusinessProperties;
+    @Setter
+    private int maxSuggestions = 4;
 
-    private DeductionCalculator deductionCalculator;
+    /**
+     * Liste complète de toutes les suggestions chargées à partir de la config YAML.
+     */
+    private final List<SuggestionVO> suggestionVOS = new ArrayList<>();
 
-    @BeforeEach
-    void setUp() {
-        // On simule la config YAML : pvi.deductionsByYear
-        Map<Integer, DeductionYearVO> deductionsByYear = new HashMap<>();
+    private final SecureRandom random = new SecureRandom();
 
-        // années 0 à 5 : tout à 0
-        deductionsByYear.put(0, year(bd("0"), bd("0"), bd("0"), bd("0")));
-        deductionsByYear.put(1, year(bd("0"), bd("0"), bd("0"), bd("0")));
-        deductionsByYear.put(2, year(bd("0"), bd("0"), bd("0"), bd("0")));
-        deductionsByYear.put(3, year(bd("0"), bd("0"), bd("0"), bd("0")));
-        deductionsByYear.put(4, year(bd("0"), bd("0"), bd("0"), bd("0")));
-        deductionsByYear.put(5, year(bd("0"), bd("0"), bd("0"), bd("0")));
+    @PostConstruct
+    public void init() {
+        PviBusinessProperties.SuggestionProperties suggestionProps = pviBusinessProperties.getSuggestion();
+        if (suggestionProps == null) {
+            // Pas de bloc suggestion => aucune suggestion
+            return;
+        }
 
-        // 6 à 21 : valeurs IR/PS réelles
-        deductionsByYear.put(6,  year(bd("6"),  bd("6"),   bd("1.65"), bd("1.65")));
-        deductionsByYear.put(7,  year(bd("6"),  bd("12"),  bd("1.65"), bd("3.3")));
-        deductionsByYear.put(8,  year(bd("6"),  bd("18"),  bd("1.65"), bd("4.95")));
-        deductionsByYear.put(9,  year(bd("6"),  bd("24"),  bd("1.65"), bd("6.6")));
-        deductionsByYear.put(10, year(bd("6"),  bd("30"),  bd("1.64"), bd("8.25")));
-        deductionsByYear.put(11, year(bd("6"),  bd("36"),  bd("1.65"), bd("9.9")));
-        deductionsByYear.put(12, year(bd("6"),  bd("42"),  bd("1.65"), bd("11.55")));
-        deductionsByYear.put(13, year(bd("6"),  bd("48"),  bd("1.65"), bd("13.2")));
-        deductionsByYear.put(14, year(bd("6"),  bd("54"),  bd("1.65"), bd("14.85")));
-        deductionsByYear.put(15, year(bd("6"),  bd("60"),  bd("1.65"), bd("16.5")));
-        deductionsByYear.put(16, year(bd("6"),  bd("66"),  bd("1.65"), bd("18.15")));
-        deductionsByYear.put(17, year(bd("6"),  bd("72"),  bd("1.65"), bd("19.8")));
-        deductionsByYear.put(18, year(bd("6"),  bd("78"),  bd("1.65"), bd("21.45")));
-        deductionsByYear.put(19, year(bd("6"),  bd("84"),  bd("1.65"), bd("23.1")));
-        deductionsByYear.put(20, year(bd("6"),  bd("90"),  bd("1.65"), bd("24.75")));
-        deductionsByYear.put(21, year(bd("6"),  bd("96"),  bd("1.65"), bd("26.4")));
+        // show = nombre max de suggestions à afficher
+        if (suggestionProps.getShow() > 0) {
+            this.maxSuggestions = suggestionProps.getShow();
+        }
 
-        // 22 : IR 4 / 100, PS 1.6 / 28
-        deductionsByYear.put(22, year(bd("4"),  bd("100"), bd("1.6"),  bd("28")));
+        Map<String, List<SuggestionVO>> suggestionsByCategory = suggestionProps.getSuggestions();
+        if (suggestionsByCategory == null || suggestionsByCategory.isEmpty()) {
+            return;
+        }
 
-        // 23 à 30 : IR tauxAnnuel null / 100, PS 9 / XX
-        deductionsByYear.put(23, year(null,     bd("100"), bd("9"), bd("37")));
-        deductionsByYear.put(24, year(null,     bd("100"), bd("9"), bd("46")));
-        deductionsByYear.put(25, year(null,     bd("100"), bd("9"), bd("55")));
-        deductionsByYear.put(26, year(null,     bd("100"), bd("9"), bd("64")));
-        deductionsByYear.put(27, year(null,     bd("100"), bd("9"), bd("73")));
-        deductionsByYear.put(28, year(null,     bd("100"), bd("9"), bd("82")));
-        deductionsByYear.put(29, year(null,     bd("100"), bd("9"), bd("91")));
-        deductionsByYear.put(30, year(null,     bd("100"), bd("9"), bd("100")));
-
-        when(pviBusinessProperties.getDeductionsByYear())
-                .thenReturn(deductionsByYear);
-
-        deductionCalculator = new DeductionCalculator(pviBusinessProperties);
-        deductionCalculator.init(); // équivalent de l'ancien @PostConstruct load()
+        // Aplatir la Map<String, List<SuggestionVO>> en une seule liste,
+        // en s’assurant que la catégorie est bien renseignée dans le VO.
+        suggestionsByCategory.forEach((categoryKey, list) -> {
+            if (list == null) {
+                return;
+            }
+            for (SuggestionVO s : list) {
+                SuggestionVO normalized = s;
+                if (s.category() == null || s.category().isBlank()) {
+                    normalized = new SuggestionVO(categoryKey, s.value(), s.url(), s.condition());
+                }
+                suggestionVOS.add(normalized);
+            }
+        });
     }
 
-    private static BigDecimal bd(String value) {
-        return value == null ? null : new BigDecimal(value);
+    public List<SuggestionVO> computeSuggestions(PviSimulationRequest req, PviSimulationResult result) {
+        if (maxSuggestions <= 0 || suggestionVOS.isEmpty()) {
+            return List.of();
+        }
+
+        Map<String, List<SuggestionVO>> eligibleByCategory = new LinkedHashMap<>();
+
+        for (SuggestionVO s : suggestionVOS) {
+            if (s.condition() == null || evalCondition(s.condition(), req, result)) {
+                eligibleByCategory
+                        .computeIfAbsent(s.category(), k -> new ArrayList<>())
+                        .add(s);
+            }
+        }
+
+        List<SuggestionVO> selected = new ArrayList<>();
+        List<SuggestionVO> leftovers = new ArrayList<>();
+
+        // 1) On prend au maximum 1 suggestion par catégorie (tirage aléatoire),
+        //    les autres vont dans "leftovers"
+        for (List<SuggestionVO> perCategory : eligibleByCategory.values()) {
+            if (perCategory.isEmpty()) {
+                continue;
+            }
+            int idx = random.nextInt(perCategory.size());
+            SuggestionVO picked = perCategory.get(idx);
+            selected.add(picked);
+
+            for (int i = 0; i < perCategory.size(); i++) {
+                if (i != idx) {
+                    leftovers.add(perCategory.get(i));
+                }
+            }
+        }
+
+        // 2) On complète avec des suggestions restantes jusqu'à maxSuggestions
+        while (selected.size() < maxSuggestions && !leftovers.isEmpty()) {
+            int idx = random.nextInt(leftovers.size());
+            selected.add(leftovers.remove(idx));
+        }
+
+        return selected;
     }
 
-    private static DeductionYearVO year(BigDecimal irTauxAnnuel,
-                                        BigDecimal irTauxGlobal,
-                                        BigDecimal psTauxAnnuel,
-                                        BigDecimal psTauxGlobal) {
-        return new DeductionYearVO(
-                new DeductionRateVO(irTauxAnnuel, irTauxGlobal),
-                new DeductionRateVO(psTauxAnnuel, psTauxGlobal)
-        );
+    /**
+     * Évalue récursivement une condition représentée par une Map<String, Object>,
+     * construite à partir du YAML. On supporte :
+     * - conditions simples : { part1: "grossCapitalGain", operator: ">", part2: "0" }
+     * - conditions composées : { part1: { ... }, operator: "||", part2: { ... } }
+     */
+    @SuppressWarnings("unchecked")
+    private boolean evalCondition(Map<String, Object> node, PviSimulationRequest req, PviSimulationResult result) {
+        if (node == null || node.isEmpty()) {
+            return true;
+        }
+
+        Object part1Obj = node.get("part1");
+        Object opObj    = node.get("operator");
+        Object part2Obj = node.get("part2");
+
+        if (part1Obj == null || opObj == null || part2Obj == null) {
+            // Condition mal formée → on la considère comme "true" pour ne pas bloquer l'affichage.
+            return true;
+        }
+
+        String op = String.valueOf(opObj);
+
+        // Cas condition composée (OR / AND) :
+        // part1 et / ou part2 sont eux-mêmes des conditions (Map avec part1 / operator)
+        if (part1Obj instanceof Map<?, ?> leftMap
+                && ((Map<?, ?>) leftMap).containsKey("part1")
+                && ((Map<?, ?>) leftMap).containsKey("operator")) {
+
+            Map<String, Object> leftCond  = (Map<String, Object>) leftMap;
+            Map<String, Object> rightCond = (Map<String, Object>) part2Obj;
+
+            boolean left  = evalCondition(leftCond, req, result);
+            boolean right = evalCondition(rightCond, req, result);
+
+            return switch (op) {
+                case "||" -> left || right;
+                case "&&" -> left && right;
+                default -> false;
+            };
+        }
+
+        // Cas condition simple
+        String varName  = String.valueOf(part1Obj);
+        Object leftValue = resolveVariable(varName, req, result);
+        String rightRaw  = String.valueOf(part2Obj);
+
+        return switch (op) {
+            case "==" -> compareEquals(leftValue, rightRaw);
+            case ">"  -> compareGreater(leftValue, rightRaw);
+            case "<"  -> compareLess(leftValue, rightRaw);
+            default   -> false;
+        };
     }
 
-    @Test
-    void shouldReturnFirstYearWhenDetentionBelowMin() {
-        DeductionYearVO yearMinus1 = deductionCalculator.getAbattementFor(-5);
-        DeductionYearVO year0      = deductionCalculator.getAbattementFor(0);
+    private Object resolveVariable(String name, PviSimulationRequest req, PviSimulationResult result) {
+        return switch (name) {
+            case "grossCapitalGain"   -> result.getGrossCapitalGain();
+            case "taxableCapitalGain" -> result.getTaxableCapitalGain();
+            case "impots"             -> result.getTotalTaxes();
+            case "holdingPeriodYears" -> BigDecimal.valueOf(result.getHoldingPeriodYears());
 
-        assertNotNull(yearMinus1);
-        assertNotNull(year0);
+            case "propertyUse" -> req.propertyUse() == null
+                    ? null
+                    : req.propertyUse().name().toLowerCase().replace('_', '-');
 
-        // les deux doivent être identiques (clamp au min)
-        assertEquals(year0.IR().tauxAnnuel(), yearMinus1.IR().tauxAnnuel());
-        assertEquals(year0.PS().tauxAnnuel(), yearMinus1.PS().tauxAnnuel());
+            case "propertyType" -> req.propertyType() == null
+                    ? null
+                    : req.propertyType().name().toLowerCase();
+
+            case "acquisitionOrigin" -> req.acquisitionOrigin() == null
+                    ? null
+                    : req.acquisitionOrigin().name().toLowerCase();
+
+            default -> null;
+        };
     }
 
-    @Test
-    void shouldReturnLastYearWhenDetentionAboveMax() {
-        DeductionYearVO year30 = deductionCalculator.getAbattementFor(30);
-        DeductionYearVO year35 = deductionCalculator.getAbattementFor(35);
+    private boolean compareEquals(Object left, String rightRaw) {
+        if (left == null) return false;
 
-        assertNotNull(year30);
-        assertNotNull(year35);
+        if (left instanceof BigDecimal bd) {
+            try {
+                BigDecimal right = new BigDecimal(rightRaw);
+                return bd.compareTo(right) == 0;
+            } catch (NumberFormatException e) {
+                return false;
+            }
+        }
 
-        // clamp : 35 doit renvoyer les valeurs de 30
-        assertEquals(year30.IR().tauxAnnuel(), year35.IR().tauxAnnuel());
-        assertEquals(year30.IR().tauxAbattementGlobal(), year35.IR().tauxAbattementGlobal());
-        assertEquals(year30.PS().tauxAnnuel(), year35.PS().tauxAnnuel());
-        assertEquals(year30.PS().tauxAbattementGlobal(), year35.PS().tauxAbattementGlobal());
+        String leftStr = left.toString();
+        return leftStr.equalsIgnoreCase(rightRaw);
     }
 
-    @Test
-    void shouldReturnExactValuesForExistingYear6() {
-        DeductionYearVO year6 = deductionCalculator.getAbattementFor(6);
-        assertNotNull(year6);
-
-        DeductionRateVO ir = year6.IR();
-        DeductionRateVO ps = year6.PS();
-
-        assertEquals(new BigDecimal("6"), ir.tauxAnnuel());
-        assertEquals(new BigDecimal("6"), ir.tauxAbattementGlobal());
-
-        assertEquals(new BigDecimal("1.65"), ps.tauxAnnuel());
-        assertEquals(new BigDecimal("1.65"), ps.tauxAbattementGlobal());
+    private boolean compareGreater(Object left, String rightRaw) {
+        if (!(left instanceof BigDecimal bd)) {
+            return false;
+        }
+        try {
+            BigDecimal right = new BigDecimal(rightRaw);
+            return bd.compareTo(right) > 0;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
-    @Test
-    void shouldReturnExactValuesForExistingYear22() {
-        DeductionYearVO year22 = deductionCalculator.getAbattementFor(22);
-        assertNotNull(year22);
-
-        DeductionRateVO ir = year22.IR();
-        DeductionRateVO ps = year22.PS();
-
-        assertEquals(new BigDecimal("4"), ir.tauxAnnuel());
-        assertEquals(new BigDecimal("100"), ir.tauxAbattementGlobal());
-
-        assertEquals(new BigDecimal("1.6"), ps.tauxAnnuel());
-        assertEquals(new BigDecimal("28"), ps.tauxAbattementGlobal());
-    }
-
-    @Test
-    void shouldHaveNullIrTauxAnnuelForYearAbove22() {
-        DeductionYearVO year23 = deductionCalculator.getAbattementFor(23);
-        assertNotNull(year23);
-
-        DeductionRateVO ir = year23.IR();
-        DeductionRateVO ps = year23.PS();
-
-        assertNull(ir.tauxAnnuel());
-        assertEquals(new BigDecimal("100"), ir.tauxAbattementGlobal());
-
-        assertEquals(new BigDecimal("9"), ps.tauxAnnuel());
-        assertEquals(new BigDecimal("37"), ps.tauxAbattementGlobal());
+    private boolean compareLess(Object left, String rightRaw) {
+        if (!(left instanceof BigDecimal bd)) {
+            return false;
+        }
+        try {
+            BigDecimal right = new BigDecimal(rightRaw);
+            return bd.compareTo(right) < 0;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 }
