@@ -1,73 +1,164 @@
 package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.calculator;
 
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config.PviBusinessProperties;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.DeductionRateVO;
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.DeductionYearVO;
-import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.Collections;
+import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.Map;
-import java.util.TreeMap;
 
-@Service
-@RequiredArgsConstructor
-public class DeductionCalculator {
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.when;
 
-    private final PviBusinessProperties pviBusinessProperties;
+@ExtendWith(MockitoExtension.class)
+class DeductionCalculatorRealDataTest {
 
-    /**
-     * Map des abattements par année de détention.
-     * On utilise un TreeMap pour pouvoir facilement récupérer
-     * la première et la dernière clé (min / max).
-     */
-    private final Map<Integer, DeductionYearVO> abattementByYear = new TreeMap<>();
+    @Mock
+    private PviBusinessProperties pviBusinessProperties;
 
-    /**
-     * Expose une vue non modifiable de la configuration chargée.
-     */
-    public Map<Integer, DeductionYearVO> getAbattementByYear() {
-        return Collections.unmodifiableMap(abattementByYear);
+    private DeductionCalculator deductionCalculator;
+
+    @BeforeEach
+    void setUp() {
+        // On simule la config YAML : pvi.deductionsByYear
+        Map<Integer, DeductionYearVO> deductionsByYear = new HashMap<>();
+
+        // années 0 à 5 : tout à 0
+        deductionsByYear.put(0, year(bd("0"), bd("0"), bd("0"), bd("0")));
+        deductionsByYear.put(1, year(bd("0"), bd("0"), bd("0"), bd("0")));
+        deductionsByYear.put(2, year(bd("0"), bd("0"), bd("0"), bd("0")));
+        deductionsByYear.put(3, year(bd("0"), bd("0"), bd("0"), bd("0")));
+        deductionsByYear.put(4, year(bd("0"), bd("0"), bd("0"), bd("0")));
+        deductionsByYear.put(5, year(bd("0"), bd("0"), bd("0"), bd("0")));
+
+        // 6 à 21 : valeurs IR/PS réelles
+        deductionsByYear.put(6,  year(bd("6"),  bd("6"),   bd("1.65"), bd("1.65")));
+        deductionsByYear.put(7,  year(bd("6"),  bd("12"),  bd("1.65"), bd("3.3")));
+        deductionsByYear.put(8,  year(bd("6"),  bd("18"),  bd("1.65"), bd("4.95")));
+        deductionsByYear.put(9,  year(bd("6"),  bd("24"),  bd("1.65"), bd("6.6")));
+        deductionsByYear.put(10, year(bd("6"),  bd("30"),  bd("1.64"), bd("8.25")));
+        deductionsByYear.put(11, year(bd("6"),  bd("36"),  bd("1.65"), bd("9.9")));
+        deductionsByYear.put(12, year(bd("6"),  bd("42"),  bd("1.65"), bd("11.55")));
+        deductionsByYear.put(13, year(bd("6"),  bd("48"),  bd("1.65"), bd("13.2")));
+        deductionsByYear.put(14, year(bd("6"),  bd("54"),  bd("1.65"), bd("14.85")));
+        deductionsByYear.put(15, year(bd("6"),  bd("60"),  bd("1.65"), bd("16.5")));
+        deductionsByYear.put(16, year(bd("6"),  bd("66"),  bd("1.65"), bd("18.15")));
+        deductionsByYear.put(17, year(bd("6"),  bd("72"),  bd("1.65"), bd("19.8")));
+        deductionsByYear.put(18, year(bd("6"),  bd("78"),  bd("1.65"), bd("21.45")));
+        deductionsByYear.put(19, year(bd("6"),  bd("84"),  bd("1.65"), bd("23.1")));
+        deductionsByYear.put(20, year(bd("6"),  bd("90"),  bd("1.65"), bd("24.75")));
+        deductionsByYear.put(21, year(bd("6"),  bd("96"),  bd("1.65"), bd("26.4")));
+
+        // 22 : IR 4 / 100, PS 1.6 / 28
+        deductionsByYear.put(22, year(bd("4"),  bd("100"), bd("1.6"),  bd("28")));
+
+        // 23 à 30 : IR tauxAnnuel null / 100, PS 9 / XX
+        deductionsByYear.put(23, year(null,     bd("100"), bd("9"), bd("37")));
+        deductionsByYear.put(24, year(null,     bd("100"), bd("9"), bd("46")));
+        deductionsByYear.put(25, year(null,     bd("100"), bd("9"), bd("55")));
+        deductionsByYear.put(26, year(null,     bd("100"), bd("9"), bd("64")));
+        deductionsByYear.put(27, year(null,     bd("100"), bd("9"), bd("73")));
+        deductionsByYear.put(28, year(null,     bd("100"), bd("9"), bd("82")));
+        deductionsByYear.put(29, year(null,     bd("100"), bd("9"), bd("91")));
+        deductionsByYear.put(30, year(null,     bd("100"), bd("9"), bd("100")));
+
+        when(pviBusinessProperties.getDeductionsByYear())
+                .thenReturn(deductionsByYear);
+
+        deductionCalculator = new DeductionCalculator(pviBusinessProperties);
+        deductionCalculator.init(); // équivalent de l'ancien @PostConstruct load()
     }
 
-    /**
-     * Initialisation après injection :
-     * on charge les abattements à partir de PviBusinessProperties (YAML).
-     */
-    @PostConstruct
-    public void init() {
-        Map<Integer, DeductionYearVO> fromConfig = pviBusinessProperties.getDeductionsByYear();
-
-        abattementByYear.clear();
-
-        if (fromConfig != null && !fromConfig.isEmpty()) {
-            abattementByYear.putAll(fromConfig);
-        }
-
-        if (abattementByYear.isEmpty()) {
-            // On choisit de "fail fast" : si la config est absente, c'est un vrai problème de paramétrage.
-            throw new IllegalStateException("PVI deductionsByYear configuration is missing or empty.");
-        }
+    private static BigDecimal bd(String value) {
+        return value == null ? null : new BigDecimal(value);
     }
 
-    /**
-     * Retourne l'abattement applicable pour un nombre d'années de détention donné.
-     * Si le nombre d'années est en dehors des bornes connues, on "clampe" :
-     *   - en dessous de la première année → on prend la première
-     *   - au-dessus de la dernière année → on prend la dernière
-     */
-    public DeductionYearVO getAbattementFor(int detentionYears) {
-        if (abattementByYear.isEmpty()) {
-            throw new IllegalStateException("Abattement configuration not initialized.");
-        }
+    private static DeductionYearVO year(BigDecimal irTauxAnnuel,
+                                        BigDecimal irTauxGlobal,
+                                        BigDecimal psTauxAnnuel,
+                                        BigDecimal psTauxGlobal) {
+        return new DeductionYearVO(
+                new DeductionRateVO(irTauxAnnuel, irTauxGlobal),
+                new DeductionRateVO(psTauxAnnuel, psTauxGlobal)
+        );
+    }
 
-        TreeMap<Integer, DeductionYearVO> tree = (TreeMap<Integer, DeductionYearVO>) abattementByYear;
+    @Test
+    void shouldReturnFirstYearWhenDetentionBelowMin() {
+        DeductionYearVO yearMinus1 = deductionCalculator.getAbattementFor(-5);
+        DeductionYearVO year0      = deductionCalculator.getAbattementFor(0);
 
-        int minYear = tree.firstKey();
-        int maxYear = tree.lastKey();
+        assertNotNull(yearMinus1);
+        assertNotNull(year0);
 
-        int key = Math.clamp(detentionYears, minYear, maxYear);
+        // les deux doivent être identiques (clamp au min)
+        assertEquals(year0.IR().tauxAnnuel(), yearMinus1.IR().tauxAnnuel());
+        assertEquals(year0.PS().tauxAnnuel(), yearMinus1.PS().tauxAnnuel());
+    }
 
-        return abattementByYear.get(key);
+    @Test
+    void shouldReturnLastYearWhenDetentionAboveMax() {
+        DeductionYearVO year30 = deductionCalculator.getAbattementFor(30);
+        DeductionYearVO year35 = deductionCalculator.getAbattementFor(35);
+
+        assertNotNull(year30);
+        assertNotNull(year35);
+
+        // clamp : 35 doit renvoyer les valeurs de 30
+        assertEquals(year30.IR().tauxAnnuel(), year35.IR().tauxAnnuel());
+        assertEquals(year30.IR().tauxAbattementGlobal(), year35.IR().tauxAbattementGlobal());
+        assertEquals(year30.PS().tauxAnnuel(), year35.PS().tauxAnnuel());
+        assertEquals(year30.PS().tauxAbattementGlobal(), year35.PS().tauxAbattementGlobal());
+    }
+
+    @Test
+    void shouldReturnExactValuesForExistingYear6() {
+        DeductionYearVO year6 = deductionCalculator.getAbattementFor(6);
+        assertNotNull(year6);
+
+        DeductionRateVO ir = year6.IR();
+        DeductionRateVO ps = year6.PS();
+
+        assertEquals(new BigDecimal("6"), ir.tauxAnnuel());
+        assertEquals(new BigDecimal("6"), ir.tauxAbattementGlobal());
+
+        assertEquals(new BigDecimal("1.65"), ps.tauxAnnuel());
+        assertEquals(new BigDecimal("1.65"), ps.tauxAbattementGlobal());
+    }
+
+    @Test
+    void shouldReturnExactValuesForExistingYear22() {
+        DeductionYearVO year22 = deductionCalculator.getAbattementFor(22);
+        assertNotNull(year22);
+
+        DeductionRateVO ir = year22.IR();
+        DeductionRateVO ps = year22.PS();
+
+        assertEquals(new BigDecimal("4"), ir.tauxAnnuel());
+        assertEquals(new BigDecimal("100"), ir.tauxAbattementGlobal());
+
+        assertEquals(new BigDecimal("1.6"), ps.tauxAnnuel());
+        assertEquals(new BigDecimal("28"), ps.tauxAbattementGlobal());
+    }
+
+    @Test
+    void shouldHaveNullIrTauxAnnuelForYearAbove22() {
+        DeductionYearVO year23 = deductionCalculator.getAbattementFor(23);
+        assertNotNull(year23);
+
+        DeductionRateVO ir = year23.IR();
+        DeductionRateVO ps = year23.PS();
+
+        assertNull(ir.tauxAnnuel());
+        assertEquals(new BigDecimal("100"), ir.tauxAbattementGlobal());
+
+        assertEquals(new BigDecimal("9"), ps.tauxAnnuel());
+        assertEquals(new BigDecimal("37"), ps.tauxAbattementGlobal());
     }
 }
