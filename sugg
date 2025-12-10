@@ -9,7 +9,83 @@ import java.util.Map;
 
 /**
  * Business configuration bean for the PVI simulator.
- * Bound to the "pvi" prefix in application.yml.
+ * Bound to the "pvi" prefix in application.yml.package com.bnpparibas.dsibddf.a100919.fis;
+
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config.PviBusinessProperties;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config.PviBusinessProperties.AbatementProperties;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config.PviBusinessProperties.SurtaxBracket;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config.PviBusinessProperties.SuggestionProperties;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+
+import java.math.BigDecimal;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Integration test to validate that PviBusinessProperties
+ * is correctly bound from application.yml.
+ */
+@SpringBootTest
+class PviBusinessPropertiesIT {
+
+    @Autowired
+    private PviBusinessProperties pviBusinessProperties;
+
+    @Test
+    void shouldLoadPviBusinessPropertiesFromYaml() {
+        assertThat(pviBusinessProperties).isNotNull();
+
+        // ----------------- Abatement -----------------
+        AbatementProperties abatement = pviBusinessProperties.getAbatement();
+        assertThat(abatement).isNotNull();
+        assertThat(abatement.getYears()).isNotEmpty();
+
+        // Year "6" from YAML:
+        var year6 = abatement.getYears().get("6");
+        assertThat(year6).isNotNull();
+        assertThat(year6.getIr().getAnnualRate())
+                .as("IR annualRate for year 6")
+                .isEqualByComparingTo(BigDecimal.valueOf(6));
+        assertThat(year6.getPs().getGlobalAllowanceRate())
+                .as("PS globalAllowanceRate for year 6")
+                .isEqualByComparingTo(BigDecimal.valueOf(1.65));
+
+        // ----------------- Surtax brackets -----------------
+        assertThat(pviBusinessProperties.getSurtaxBrackets())
+                .as("surtaxBrackets should not be empty")
+                .isNotEmpty();
+
+        SurtaxBracket firstBracket = pviBusinessProperties.getSurtaxBrackets().get(0);
+        assertThat(firstBracket.getMin())
+                .as("first bracket min")
+                .isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(firstBracket.getMax())
+                .as("first bracket max")
+                .isEqualByComparingTo(BigDecimal.valueOf(50000));
+        assertThat(firstBracket.getPlusValuePercent())
+                .as("first bracket plusValuePercent")
+                .isEqualByComparingTo(BigDecimal.ZERO);
+
+        // ----------------- Suggestions -----------------
+        SuggestionProperties suggestion = pviBusinessProperties.getSuggestion();
+        assertThat(suggestion).isNotNull();
+        assertThat(suggestion.getShow()).isEqualTo(4);
+        assertThat(suggestion.getSuggestions()).isNotEmpty();
+
+        var fiscalSuggestions = suggestion.getSuggestions().get("fiscal");
+        assertThat(fiscalSuggestions)
+                .as("fiscal suggestions should not be empty")
+                .isNotEmpty();
+
+        // Example: first fiscal suggestion code should be PVI_FIS_01
+        assertThat(fiscalSuggestions.get(0).getCode())
+                .as("first fiscal suggestion code")
+                .isEqualTo("PVI_FIS_01");
+    }
+}
+
  */
 @Data
 @ConfigurationProperties(prefix = "pvi")
