@@ -1,24 +1,55 @@
 package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.calculator;
 
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config.PviBusinessProperties;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.CapitalGainTaxBracketVO;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.when;
 
-/**
- * Test d'intégration "données réelles" :
- * - utilise le bean Spring CapitalGainTaxCalculator
- * - les tranches sont chargées depuis application.yml (pvi.capitalGainSurtaxBrackets)
- * - vérifie que les résultats sont identiques à l'ancien calcul basé sur le JSON.
- */
-@SpringBootTest
+@ExtendWith(MockitoExtension.class)
 class CapitalGainTaxCalculatorRealDataTest {
 
-    @Autowired
+    @Mock
+    private PviBusinessProperties pviBusinessProperties;
+
     private CapitalGainTaxCalculator calculator;
+
+    @BeforeEach
+    void setUp() {
+        // On simule la config YAML : pvi.capitalGainSurtaxBrackets
+        List<CapitalGainTaxBracketVO> brackets = List.of(
+                new CapitalGainTaxBracketVO(bd("0"),      bd("50000"), bd("0"),  null),
+                new CapitalGainTaxBracketVO(bd("50001"),  bd("60000"), bd("2"),  bd("0.05")),
+                new CapitalGainTaxBracketVO(bd("60001"),  bd("100000"), bd("2"), null),
+                new CapitalGainTaxBracketVO(bd("100001"), bd("110000"), bd("3"), bd("0.1")),
+                new CapitalGainTaxBracketVO(bd("110001"), bd("150000"), bd("3"), null),
+                new CapitalGainTaxBracketVO(bd("150001"), bd("160000"), bd("4"), bd("0.15")),
+                new CapitalGainTaxBracketVO(bd("160001"), bd("200000"), bd("4"), null),
+                new CapitalGainTaxBracketVO(bd("200001"), bd("210000"), bd("5"), bd("0.2")),
+                new CapitalGainTaxBracketVO(bd("210001"), bd("250000"), bd("5"), null),
+                new CapitalGainTaxBracketVO(bd("250001"), bd("260000"), bd("6"), bd("0.25")),
+                new CapitalGainTaxBracketVO(bd("260001"), null,        bd("6"), null)
+        );
+
+        when(pviBusinessProperties.getCapitalGainSurtaxBrackets())
+                .thenReturn(brackets);
+
+        calculator = new CapitalGainTaxCalculator(pviBusinessProperties);
+        // équivalent de l’ancien @PostConstruct load()
+        calculator.init();
+    }
+
+    private static BigDecimal bd(String value) {
+        return value == null ? null : new BigDecimal(value);
+    }
 
     @Test
     void shouldReturnZeroWhenPlusValueIsNullOrNonPositive() {
