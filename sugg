@@ -1,44 +1,96 @@
-Dans le domaine : Définis une interface pour les propriétés.
+package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.calculator;
 
-// Dans le module domaine
-public interface PviBusinessPropertiesProvider {
-    String getSomeSetting();
-    // autres méthodes pour les propriétés nécessaires
-}
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config.PviBusinessProperties;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config.PviBusinessProperties.SurtaxBracket;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.CapitalGainTaxBracketVO;
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 
-Dans le module d’exposition : Implémente cette interface et configure-la avec les données du YAML.
+@Service
+@RequiredArgsConstructor
+public class CapitalGainTaxCalculator {
 
-// Dans le module d’exposition
-@Component
-public class PviBusinessPropertiesProviderImpl implements PviBusinessPropertiesProvider {
-
+    /**
+     * Business configuration loaded from application.yml (pvi.surtaxBrackets).
+     */
     private final PviBusinessProperties pviBusinessProperties;
 
-    @Autowired
-    public PviBusinessPropertiesProviderImpl(PviBusinessProperties pviBusinessProperties) {
-        this.pviBusinessProperties = pviBusinessProperties;
+    /**
+     * Internal representation reused by the existing computation logic.
+     */
+    private final List<CapitalGainTaxBracketVO> brackets = new ArrayList<>();
+
+    @PostConstruct
+    public void loadFromProperties() {
+        brackets.clear();
+
+        List<SurtaxBracket> configuredBrackets = pviBusinessProperties.getSurtaxBrackets();
+        if (configuredBrackets == null || configuredBrackets.isEmpty()) {
+            return;
+        }
+
+        for (SurtaxBracket b : configuredBrackets) {
+            if (b.getMin() == null) {
+                continue; // sécurité : on ignore les tranches mal configurées
+            }
+
+            BigDecimal min = b.getMin();
+            BigDecimal max = b.getMax(); // peut être null (= pas de plafond)
+            BigDecimal percent = b.getPlusValuePercent() != null
+                    ? b.getPlusValuePercent()
+                    : BigDecimal.ZERO;
+            BigDecimal rapport = b.getRatio() != null
+                    ? b.getRatio()
+                    : BigDecimal.ZERO;
+
+            brackets.add(new CapitalGainTaxBracketVO(min, max, percent, rapport));
+        }
+
+        brackets.sort(Comparator.comparing(CapitalGainTaxBracketVO::min));
     }
 
-    @Override
-    public String getSomeSetting() {
-        return pviBusinessProperties.getSomeSetting();
+    public BigDecimal computeCapitalGainSurtax(BigDecimal plusValueIR) {
+        if (plusValueIR == null || plusValueIR.signum() <= 0) {
+            return BigDecimal.ZERO;
+        }
+
+        for (CapitalGainTaxBracketVO b : brackets) {
+            boolean match;
+            if (b.max() != null) {
+                match = plusValueIR.compareTo(b.min()) >= 0
+                        && plusValueIR.compareTo(b.max()) <= 0;
+            } else {
+                match = plusValueIR.compareTo(b.min()) >= 0;
+            }
+
+            if (match) {
+                return computeBracketTax(b, plusValueIR);
+            }
+        }
+        return BigDecimal.ZERO;
     }
-}
 
+    private BigDecimal computeBracketTax(CapitalGainTaxBracketVO b, BigDecimal plusValueIR) {
+        BigDecimal percentTerm = b.pourcentagePlusValue()
+                .divide(new BigDecimal("100"))
+                .multiply(plusValueIR);
 
-Dans le module domaine : Injecte simplement l’interface et utilise-la.
+        BigDecimal rapportTerm = BigDecimal.ZERO;
+        if (b.max() != null && b.rapport() != null) {
+            rapportTerm = b.max()
+                    .subtract(plusValueIR)
+                    .multiply(b.rapport());
+        }
 
-// Dans le module domaine
-@Service
-public class PviSimulationService {
-
-    private final PviBusinessPropertiesProvider propertiesProvider;
-
-    @Autowired
-    public PviSimulationService(PviBusinessPropertiesProvider propertiesProvider) {
-        this.propertiesProvider = propertiesProvider;
+        return percentTerm
+                .subtract(rapportTerm)
+                .setScale(0, RoundingMode.HALF_UP);
     }
-
-    // Utilise les propriétés via l’interface
 }
