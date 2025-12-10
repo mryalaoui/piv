@@ -1,158 +1,96 @@
-package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config;
+package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.calculator;
 
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config.PviBusinessProperties;
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.CapitalGainTaxBracketVO;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.DeductionRateVO;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.DeductionYearVO;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.SuggestionVO;
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+@Service
+@RequiredArgsConstructor
+public class CapitalGainTaxCalculator {
 
-/**
- * Test d’intégration léger pour vérifier que :
- * - le YAML pvi.* est bien bindé dans PviBusinessProperties
- * - les noms de propriétés sont cohérents avec les VO
- */
-@SpringBootTest
-class PviBusinessPropertiesTest {
+    /**
+     * Configuration métier PVI (chargée depuis application.yml).
+     */
+    private final PviBusinessProperties pviBusinessProperties;
 
-    @Autowired
-    private PviBusinessProperties pviBusinessProperties;
+    /**
+     * Liste interne des tranches, triée par min.
+     */
+    private final List<CapitalGainTaxBracketVO> brackets = new ArrayList<>();
 
-    @Test
-    void contextLoads_andPropertiesAreNotNull() {
-        assertNotNull(pviBusinessProperties, "PviBusinessProperties should be injected");
-        assertNotNull(pviBusinessProperties.getDeductionsByYear(), "deductionsByYear should not be null");
-        assertNotNull(pviBusinessProperties.getCapitalGainSurtaxBrackets(), "capitalGainSurtaxBrackets should not be null");
-        assertNotNull(pviBusinessProperties.getSuggestion(), "suggestion block should not be null");
+    /**
+     * Initialisation après injection : on récupère les tranches depuis
+     * PviBusinessProperties et on les trie par borne minimale.
+     */
+    @PostConstruct
+    public void init() {
+        List<CapitalGainTaxBracketVO> fromConfig = pviBusinessProperties.getCapitalGainSurtaxBrackets();
+        brackets.clear();
+        if (fromConfig != null) {
+            brackets.addAll(fromConfig);
+            brackets.sort(Comparator.comparing(CapitalGainTaxBracketVO::min));
+        }
     }
 
-    @Test
-    void shouldBindDeductionsByYearFromYaml() {
-        Map<Integer, DeductionYearVO> map = pviBusinessProperties.getDeductionsByYear();
-        assertFalse(map.isEmpty(), "deductionsByYear should not be empty");
+    /**
+     * Calcule la surtaxe sur la plus-value imposable (plusValueIR).
+     * Si plusValueIR est nulle, négative ou aucune tranche ne matche, retourne 0.
+     */
+    public BigDecimal computeCapitalGainSurtax(BigDecimal plusValueIR) {
+        if (plusValueIR == null || plusValueIR.signum() <= 0) {
+            return BigDecimal.ZERO;
+        }
+        if (brackets.isEmpty()) {
+            // Config non présente / mal chargée : on préfère renvoyer 0 plutôt que planter.
+            return BigDecimal.ZERO;
+        }
 
-        // Exemple : année 6
-        DeductionYearVO year6 = map.get(6);
-        assertNotNull(year6, "Year 6 should be present");
+        for (CapitalGainTaxBracketVO b : brackets) {
+            boolean match;
+            if (b.max() != null) {
+                match = plusValueIR.compareTo(b.min()) >= 0
+                        && plusValueIR.compareTo(b.max()) <= 0;
+            } else {
+                // Dernière tranche ouverte : min <= plusValueIR < +∞
+                match = plusValueIR.compareTo(b.min()) >= 0;
+            }
 
-        DeductionRateVO ir6 = year6.IR();
-        DeductionRateVO ps6 = year6.PS();
+            if (match) {
+                return computeBracketTax(b, plusValueIR);
+            }
+        }
 
-        assertNotNull(ir6, "IR for year 6 should not be null");
-        assertNotNull(ps6, "PS for year 6 should not be null");
-
-        assertEquals(new BigDecimal("6"), ir6.tauxAnnuel());
-        assertEquals(new BigDecimal("6"), ir6.tauxAbattementGlobal());
-
-        assertEquals(new BigDecimal("1.65"), ps6.tauxAnnuel());
-        assertEquals(new BigDecimal("1.65"), ps6.tauxAbattementGlobal());
-
-        // Exemple : année 22 (IR 4 / 100, PS 1.6 / 28)
-        DeductionYearVO year22 = map.get(22);
-        assertNotNull(year22, "Year 22 should be present");
-
-        DeductionRateVO ir22 = year22.IR();
-        DeductionRateVO ps22 = year22.PS();
-
-        assertEquals(new BigDecimal("4"), ir22.tauxAnnuel());
-        assertEquals(new BigDecimal("100"), ir22.tauxAbattementGlobal());
-
-        assertEquals(new BigDecimal("1.6"), ps22.tauxAnnuel());
-        assertEquals(new BigDecimal("28"), ps22.tauxAbattementGlobal());
-
-        // Exemple : année 30 (IR null / 100, PS 9 / 100)
-        DeductionYearVO year30 = map.get(30);
-        assertNotNull(year30, "Year 30 should be present");
-
-        DeductionRateVO ir30 = year30.IR();
-        DeductionRateVO ps30 = year30.PS();
-
-        assertNull(ir30.tauxAnnuel(), "IR tauxAnnuel for year 30 should be null");
-        assertEquals(new BigDecimal("100"), ir30.tauxAbattementGlobal());
-
-        assertEquals(new BigDecimal("9"), ps30.tauxAnnuel());
-        assertEquals(new BigDecimal("100"), ps30.tauxAbattementGlobal());
+        return BigDecimal.ZERO;
     }
 
-    @Test
-    void shouldBindCapitalGainSurtaxBracketsFromYaml() {
-        List<CapitalGainTaxBracketVO> brackets = pviBusinessProperties.getCapitalGainSurtaxBrackets();
-        assertNotNull(brackets, "capitalGainSurtaxBrackets should not be null");
-        assertEquals(11, brackets.size(), "There should be 11 surtax brackets");
+    /**
+     * Applique la formule de calcul de la surtaxe pour une tranche donnée :
+     *   percentTerm  = (pourcentagePlusValue / 100) * plusValueIR
+     *   rapportTerm  = (max - plusValueIR) * rapport   (si max et rapport non nuls)
+     *   surtaxe      = (percentTerm - rapportTerm) arrondi à l'euro le plus proche.
+     */
+    private BigDecimal computeBracketTax(CapitalGainTaxBracketVO b, BigDecimal plusValueIR) {
+        BigDecimal percentTerm = b.pourcentagePlusValue()
+                .divide(new BigDecimal("100"))
+                .multiply(plusValueIR);
 
-        // Première tranche : 0 -> 50 000, 0 %
-        CapitalGainTaxBracketVO first = brackets.get(0);
-        assertEquals(new BigDecimal("0"), first.min());
-        assertEquals(new BigDecimal("50000"), first.max());
-        assertEquals(new BigDecimal("0"), first.pourcentagePlusValue());
-        assertNull(first.rapport(), "First bracket rapport should be null");
+        BigDecimal rapportTerm = BigDecimal.ZERO;
+        if (b.max() != null && b.rapport() != null) {
+            rapportTerm = b.max()
+                    .subtract(plusValueIR)
+                    .multiply(b.rapport());
+        }
 
-        // Tranche avec rapport 0.05 : 50 001 -> 60 000, 2 %
-        CapitalGainTaxBracketVO second = brackets.get(1);
-        assertEquals(new BigDecimal("50001"), second.min());
-        assertEquals(new BigDecimal("60000"), second.max());
-        assertEquals(new BigDecimal("2"), second.pourcentagePlusValue());
-        assertEquals(new BigDecimal("0.05"), second.rapport());
-
-        // Dernière tranche : 260001 -> +∞, 6 %
-        CapitalGainTaxBracketVO last = brackets.get(brackets.size() - 1);
-        assertEquals(new BigDecimal("260001"), last.min());
-        assertNull(last.max(), "Last bracket max should be null (open upper bound)");
-        assertEquals(new BigDecimal("6"), last.pourcentagePlusValue());
-        assertNull(last.rapport(), "Last bracket rapport should be null");
-    }
-
-    @Test
-    void shouldBindSuggestionsFromYaml() {
-        PviBusinessProperties.SuggestionProperties suggestionProps = pviBusinessProperties.getSuggestion();
-        assertNotNull(suggestionProps, "SuggestionProperties should not be null");
-
-        assertEquals(4, suggestionProps.getShow(), "show should be 4");
-
-        Map<String, List<SuggestionVO>> suggestionsByCategory = suggestionProps.getSuggestions();
-        assertNotNull(suggestionsByCategory, "suggestions map should not be null");
-
-        assertTrue(suggestionsByCategory.containsKey("general"));
-        assertTrue(suggestionsByCategory.containsKey("financier"));
-        assertTrue(suggestionsByCategory.containsKey("juridique"));
-        assertTrue(suggestionsByCategory.containsKey("fiscal"));
-
-        // Exemple : une suggestion générale
-        List<SuggestionVO> generalList = suggestionsByCategory.get("general");
-        assertNotNull(generalList);
-        assertFalse(generalList.isEmpty());
-
-        SuggestionVO general1 = generalList.get(0);
-        assertEquals("general", general1.category());
-        assertEquals("PVI_SUGG_GENERAL_01_VALUE", general1.value());
-        assertEquals("PVI_SUGG_GENERAL_01_URL", general1.url());
-        assertNotNull(general1.condition(), "General suggestion 1 should have a condition map");
-
-        // Exemple : suggestion fiscale avec condition complexe (OR)
-        List<SuggestionVO> fiscalList = suggestionsByCategory.get("fiscal");
-        assertNotNull(fiscalList);
-        assertFalse(fiscalList.isEmpty());
-
-        // On cherche celle qui correspond au code PVI_SUGG_FISCAL_05_VALUE
-        SuggestionVO complexCondition = fiscalList.stream()
-                .filter(s -> "PVI_SUGG_FISCAL_05_VALUE".equals(s.value()))
-                .findFirst()
-                .orElse(null);
-
-        assertNotNull(complexCondition, "Complex fiscal suggestion should be present");
-        assertEquals("fiscal", complexCondition.category());
-        assertEquals("PVI_SUGG_FISCAL_05_URL", complexCondition.url());
-
-        Map<String, Object> condition = complexCondition.condition();
-        assertNotNull(condition, "Condition map should not be null");
-        assertTrue(condition.containsKey("operator"));
-        assertEquals("||", condition.get("operator"));
+        return percentTerm
+                .subtract(rapportTerm)
+                .setScale(0, RoundingMode.HALF_UP);
     }
 }
