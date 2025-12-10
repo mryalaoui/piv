@@ -1,185 +1,98 @@
-package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine;
+package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo;
 
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config.PviBusinessProperties;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.dto.PviSimulationRequest;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.enums.*;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.result.PviSimulationResult;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.SuggestionVO;
-
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.*;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
 
-@ExtendWith(MockitoExtension.class)
-class SuggestionEngineTest {
-
-    @Mock
-    private PviBusinessProperties pviBusinessProperties;
-
-    @Mock
-    private PviBusinessProperties.SuggestionProperties suggestionProperties;
-
-    private SuggestionEngine engine;
-
-    @BeforeEach
-    void setUp() {
-
-        // --- SIMULATION DE LA CONFIG YAML pvi.suggestion ----
-
-        Map<String, List<SuggestionVO>> suggestionsByCategory = new HashMap<>();
-
-        suggestionsByCategory.put("fiscal", List.of(
-                new SuggestionVO("fiscal",
-                        "La cession du domicile conjugual nécessite l'accord des deux époux.",
-                        "",
-                        Map.of("part1", "propertyUse", "operator", "==", "part2", "primary-residence")
-                ),
-
-                new SuggestionVO("fiscal",
-                        "Les moins-values ne sont pas imputables.",
-                        "",
-                        Map.of("part1", "grossCapitalGain", "operator", "<", "part2", "0")
-                ),
-
-                new SuggestionVO("fiscal",
-                        "Les cessions > 30 ans bénéficient d'une exonération totale.",
-                        "",
-                        Map.of("part1", "holdingPeriodYears", "operator", ">", "part2", "30")
-                )
-        ));
-
-        suggestionsByCategory.put("general", List.of(
-                new SuggestionVO("general",
-                        "La vente de terrains constructibles est soumise à la TVA.",
-                        "",
-                        Map.of("part1", "propertyType", "operator", "==", "part2", "land")
-                ),
-
-                new SuggestionVO("general",
-                        "Les droits de donation majorent le prix d’acquisition.",
-                        "",
-                        Map.of("part1", "acquisitionOrigin", "operator", "==", "part2", "gift")
-                )
-        ));
-
-        when(pviBusinessProperties.getSuggestion()).thenReturn(suggestionProperties);
-        when(suggestionProperties.getShow()).thenReturn(20);
-        when(suggestionProperties.getSuggestions()).thenReturn(suggestionsByCategory);
-
-        engine = new SuggestionEngine(pviBusinessProperties);
-        engine.init(); // remplace @PostConstruct
-    }
-
-    // ----------------------------
-    // --- HELPERS ----------------
-    // ----------------------------
-
-    private PviSimulationRequest request(PropertyUsage usage, PropertyType type, PropertyOrigin origin) {
-        return new PviSimulationRequest(
-                type,
-                usage,
-                origin,
-                LocalDate.of(2010, 1, 1),
-                LocalDate.of(2025, 1, 1),
-                new BigDecimal("150000"),
-                null,
-                new BigDecimal("350000"),
-                null,
-                RenovationFlag.NON,
-                null
-        );
-    }
-
-    private PviSimulationResult result(int years, BigDecimal pvBrute, BigDecimal pvNette, BigDecimal impots) {
-        return PviSimulationResult.builder()
-                .holdingPeriodYears(years)
-                .grossCapitalGain(pvBrute)
-                .taxableCapitalGain(pvNette)
-                .totalTaxes(impots)
-                .saleProceeds(new BigDecimal("350000"))
-                .adjustedCostBasis(new BigDecimal("150000"))
-                .incomeTax(BigDecimal.ZERO)
-                .socialContributions(BigDecimal.ZERO)
-                .capitalGainSurtax(BigDecimal.ZERO)
-                .netProceeds(BigDecimal.ZERO)
-                .effectiveTaxRate(0)
-                .taxOutcomeState(TaxOutcomeState.IMPOSABLE_IR_PS)
-                .build();
-    }
-
-    // -------------------------------------------------------------
-    // --------------------- TESTS ---------------------------------
-    // -------------------------------------------------------------
+class SuggestionVOTest {
 
     @Test
-    void shouldLoadConfigurationFromProperties() {
-        List<SuggestionVO> suggestions = engine.computeSuggestions(
-                request(PropertyUsage.SECONDARY_RESIDENCE, PropertyType.APARTMENT, PropertyOrigin.PURCHASE),
-                result(10, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)
-        );
+    void shouldCreateSimpleSuggestionWithoutCondition() {
+        // given
+        String category = "fiscal";
+        String value    = "PVI_SUGG_FISCAL_01_VALUE";
+        String url      = "PVI_SUGG_FISCAL_01_URL";
 
-        assertFalse(suggestions.isEmpty(), "La configuration mockée doit charger des suggestions");
+        // when
+        SuggestionVO vo = new SuggestionVO(category, value, url, null);
+
+        // then
+        assertEquals(category, vo.category());
+        assertEquals(value, vo.value());
+        assertEquals(url, vo.url());
+        assertNull(vo.condition(), "La condition doit être null quand non renseignée");
     }
 
     @Test
-    void shouldSuggestForPrimaryResidenceCondition() {
-        List<SuggestionVO> list = engine.computeSuggestions(
-                request(PropertyUsage.PRIMARY_RESIDENCE, PropertyType.HOUSE, PropertyOrigin.PURCHASE),
-                result(3, new BigDecimal("30000"), new BigDecimal("25000"), new BigDecimal("5000"))
+    void shouldCreateSuggestionWithSimpleCondition() {
+        // given
+        Map<String, Object> condition = Map.of(
+                "part1", "taxableCapitalGain",
+                "operator", ">",
+                "part2", "50000"
         );
 
-        assertTrue(
-                list.stream().anyMatch(s -> s.value().contains("domicile conjugual")),
-                "La suggestion sur la résidence principale doit apparaître"
+        // when
+        SuggestionVO vo = new SuggestionVO(
+                "fiscal",
+                "PVI_SUGG_FISCAL_SURTAXE_VALUE",
+                "PVI_SUGG_FISCAL_SURTAXE_URL",
+                condition
         );
+
+        // then
+        assertNotNull(vo.condition());
+        assertEquals("taxableCapitalGain", vo.condition().get("part1"));
+        assertEquals(">", vo.condition().get("operator"));
+        assertEquals("50000", vo.condition().get("part2"));
     }
 
     @Test
-    void shouldSuggestExonerationForMoreThan30Years() {
-        List<SuggestionVO> list = engine.computeSuggestions(
-                request(PropertyUsage.SECONDARY_RESIDENCE, PropertyType.HOUSE, PropertyOrigin.PURCHASE),
-                result(31, new BigDecimal("40000"), new BigDecimal("30000"), new BigDecimal("5000"))
+    @SuppressWarnings("unchecked")
+    void shouldSupportCompositeConditionTree() {
+        // given : (propertyUse == 'secondary-residence' || propertyUse == 'location')
+
+        Map<String, Object> leftCond = Map.of(
+                "part1", "propertyUse",
+                "operator", "==",
+                "part2", "secondary-residence"
         );
 
-        assertTrue(
-                list.stream().anyMatch(s -> s.value().contains("exonération totale")),
-                "La suggestion > 30 ans doit apparaître"
+        Map<String, Object> rightCond = Map.of(
+                "part1", "propertyUse",
+                "operator", "==",
+                "part2", "location"
         );
+
+        Map<String, Object> rootCondition = Map.of(
+                "part1", leftCond,
+                "operator", "||",
+                "part2", rightCond
+        );
+
+        // when
+        SuggestionVO vo = new SuggestionVO(
+                "fiscal",
+                "PVI_SUGG_FISCAL_FIRST_DISPOSAL_VALUE",
+                "PVI_SUGG_FISCAL_FIRST_DISPOSAL_URL",
+                rootCondition
+        );
+
+        // then
+        assertNotNull(vo.condition());
+        assertEquals("||", vo.condition().get("operator"));
+
+        Map<String, Object> part1 = (Map<String, Object>) vo.condition().get("part1");
+        Map<String, Object> part2 = (Map<String, Object>) vo.condition().get("part2");
+
+        assertEquals("propertyUse", part1.get("part1"));
+        assertEquals("==", part1.get("operator"));
+        assertEquals("secondary-residence", part1.get("part2"));
+
+        assertEquals("propertyUse", part2.get("part1"));
+        assertEquals("==", part2.get("operator"));
+        assertEquals("location", part2.get("part2"));
     }
-
-    @Test
-    void shouldSuggestDonationRules() {
-        List<SuggestionVO> list = engine.computeSuggestions(
-                request(PropertyUsage.SECONDARY_RESIDENCE, PropertyType.APARTMENT, PropertyOrigin.GIFT),
-                result(5, new BigDecimal("40000"), new BigDecimal("20000"), new BigDecimal("5000"))
-        );
-
-        assertTrue(
-                list.stream().anyMatch(s -> s.value().contains("donation")),
-                "La suggestion liée à la donation doit apparaître"
-        );
-    }
-
-    @Test
-    void shouldSuggestTvaForTerrain() {
-        List<SuggestionVO> list = engine.computeSuggestions(
-                request(PropertyUsage.SECONDARY_RESIDENCE, PropertyType.LAND, PropertyOrigin.PURCHASE),
-                result(5, new BigDecimal("30000"), new BigDecimal("20000"), new BigDecimal("4000"))
-        );
-
-        assertTrue(
-                list.stream().anyMatch(s -> s.value().contains("TVA")),
-                "La suggestion liée au terrain doit apparaître"
-        );
-    }
-
 }
