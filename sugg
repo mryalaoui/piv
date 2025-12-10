@@ -1,111 +1,73 @@
 package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.calculator;
 
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config.PviBusinessProperties;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.CapitalGainTaxBracketVO;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.DeductionYearVO;
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
-import java.util.List;
+import java.util.Collections;
+import java.util.Map;
+import java.util.TreeMap;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.Mockito.when;
+@Service
+@RequiredArgsConstructor
+public class DeductionCalculator {
 
-@ExtendWith(MockitoExtension.class)
-class CapitalGainTaxCalculatorRealDataTest {
+    private final PviBusinessProperties pviBusinessProperties;
 
-    @Mock
-    private PviBusinessProperties pviBusinessProperties;
+    /**
+     * Map des abattements par année de détention.
+     * On utilise un TreeMap pour pouvoir facilement récupérer
+     * la première et la dernière clé (min / max).
+     */
+    private final Map<Integer, DeductionYearVO> abattementByYear = new TreeMap<>();
 
-    private CapitalGainTaxCalculator calculator;
-
-    @BeforeEach
-    void setUp() {
-        // On simule la config YAML : pvi.capitalGainSurtaxBrackets
-        List<CapitalGainTaxBracketVO> brackets = List.of(
-                new CapitalGainTaxBracketVO(bd("0"),      bd("50000"), bd("0"),  null),
-                new CapitalGainTaxBracketVO(bd("50001"),  bd("60000"), bd("2"),  bd("0.05")),
-                new CapitalGainTaxBracketVO(bd("60001"),  bd("100000"), bd("2"), null),
-                new CapitalGainTaxBracketVO(bd("100001"), bd("110000"), bd("3"), bd("0.1")),
-                new CapitalGainTaxBracketVO(bd("110001"), bd("150000"), bd("3"), null),
-                new CapitalGainTaxBracketVO(bd("150001"), bd("160000"), bd("4"), bd("0.15")),
-                new CapitalGainTaxBracketVO(bd("160001"), bd("200000"), bd("4"), null),
-                new CapitalGainTaxBracketVO(bd("200001"), bd("210000"), bd("5"), bd("0.2")),
-                new CapitalGainTaxBracketVO(bd("210001"), bd("250000"), bd("5"), null),
-                new CapitalGainTaxBracketVO(bd("250001"), bd("260000"), bd("6"), bd("0.25")),
-                new CapitalGainTaxBracketVO(bd("260001"), null,        bd("6"), null)
-        );
-
-        when(pviBusinessProperties.getCapitalGainSurtaxBrackets())
-                .thenReturn(brackets);
-
-        calculator = new CapitalGainTaxCalculator(pviBusinessProperties);
-        // équivalent de l’ancien @PostConstruct load()
-        calculator.init();
+    /**
+     * Expose une vue non modifiable de la configuration chargée.
+     */
+    public Map<Integer, DeductionYearVO> getAbattementByYear() {
+        return Collections.unmodifiableMap(abattementByYear);
     }
 
-    private static BigDecimal bd(String value) {
-        return value == null ? null : new BigDecimal(value);
+    /**
+     * Initialisation après injection :
+     * on charge les abattements à partir de PviBusinessProperties (YAML).
+     */
+    @PostConstruct
+    public void init() {
+        Map<Integer, DeductionYearVO> fromConfig = pviBusinessProperties.getDeductionsByYear();
+
+        abattementByYear.clear();
+
+        if (fromConfig != null && !fromConfig.isEmpty()) {
+            abattementByYear.putAll(fromConfig);
+        }
+
+        if (abattementByYear.isEmpty()) {
+            // On choisit de "fail fast" : si la config est absente, c'est un vrai problème de paramétrage.
+            throw new IllegalStateException("PVI deductionsByYear configuration is missing or empty.");
+        }
     }
 
-    @Test
-    void shouldReturnZeroWhenPlusValueIsNullOrNonPositive() {
-        assertEquals(new BigDecimal("0"), calculator.computeCapitalGainSurtax(null));
-        assertEquals(new BigDecimal("0"), calculator.computeCapitalGainSurtax(new BigDecimal("0")));
-        assertEquals(new BigDecimal("0"), calculator.computeCapitalGainSurtax(new BigDecimal("-1000")));
-    }
+    /**
+     * Retourne l'abattement applicable pour un nombre d'années de détention donné.
+     * Si le nombre d'années est en dehors des bornes connues, on "clampe" :
+     *   - en dessous de la première année → on prend la première
+     *   - au-dessus de la dernière année → on prend la dernière
+     */
+    public DeductionYearVO getAbattementFor(int detentionYears) {
+        if (abattementByYear.isEmpty()) {
+            throw new IllegalStateException("Abattement configuration not initialized.");
+        }
 
-    @Test
-    void shouldUseFirstBracketWithZeroPercent() {
-        BigDecimal tax1 = calculator.computeCapitalGainSurtax(new BigDecimal("30000"));
-        BigDecimal tax2 = calculator.computeCapitalGainSurtax(new BigDecimal("50000"));
+        TreeMap<Integer, DeductionYearVO> tree = (TreeMap<Integer, DeductionYearVO>) abattementByYear;
 
-        assertEquals(new BigDecimal("0"), tax1);
-        assertEquals(new BigDecimal("0"), tax2);
-    }
+        int minYear = tree.firstKey();
+        int maxYear = tree.lastKey();
 
-    @Test
-    void shouldUseBracketWithRapportBetween50001And60000() {
-        BigDecimal taxAtMin = calculator.computeCapitalGainSurtax(new BigDecimal("50001"));
-        BigDecimal taxMid   = calculator.computeCapitalGainSurtax(new BigDecimal("55000"));
-        BigDecimal taxMax   = calculator.computeCapitalGainSurtax(new BigDecimal("60000"));
+        int key = Math.clamp(detentionYears, minYear, maxYear);
 
-        assertEquals(new BigDecimal("500"), taxAtMin);
-        assertEquals(new BigDecimal("850"), taxMid);
-        assertEquals(new BigDecimal("1200"), taxMax);
-    }
-
-    @Test
-    void shouldUseBracketWithoutRapportBetween60001And100000() {
-        BigDecimal taxAtMin = calculator.computeCapitalGainSurtax(new BigDecimal("60001"));
-        BigDecimal taxMid   = calculator.computeCapitalGainSurtax(new BigDecimal("80000"));
-        BigDecimal taxMax   = calculator.computeCapitalGainSurtax(new BigDecimal("100000"));
-
-        assertEquals(new BigDecimal("1200"), taxAtMin);
-        assertEquals(new BigDecimal("1600"), taxMid);
-        assertEquals(new BigDecimal("2000"), taxMax);
-    }
-
-    @Test
-    void shouldUseBracketWithRapportBetween150001And160000() {
-        BigDecimal taxAtMin = calculator.computeCapitalGainSurtax(new BigDecimal("150001"));
-        BigDecimal taxMid   = calculator.computeCapitalGainSurtax(new BigDecimal("155000"));
-        BigDecimal taxMax   = calculator.computeCapitalGainSurtax(new BigDecimal("160000"));
-
-        assertEquals(new BigDecimal("4500"), taxAtMin);
-        assertEquals(new BigDecimal("5450"), taxMid);
-        assertEquals(new BigDecimal("6400"), taxMax);
-    }
-
-    @Test
-    void shouldUseOpenEndedLastBracketForValuesAbove260000() {
-        BigDecimal taxAtBorder = calculator.computeCapitalGainSurtax(new BigDecimal("260001"));
-        BigDecimal taxHigh     = calculator.computeCapitalGainSurtax(new BigDecimal("300000"));
-
-        assertEquals(new BigDecimal("15600"), taxAtBorder);
-        assertEquals(new BigDecimal("18000"), taxHigh);
+        return abattementByYear.get(key);
     }
 }
