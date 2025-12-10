@@ -1,37 +1,353 @@
+logging:
+  config: classpath:logback-local.xml
+  level:
+    ROOT: INFO
+    org.springframework: INFO
+    com.bnpparibas.dsibddf.a100919.fis: DEBUG
+
+spring:
+  cloud:
+    vault:
+      enabled: false
+      ssl:
+        bundle:
+          jks:
+            client:
+              truststore:
+                location: ${JAVA_HOME}/lib/security/cacerts
+                password: changeit
+                type: jks
+
+openapi:
+  servers:
+    - order: 1
+      description: Local
+      url: http://localhost:8080
+    - order: 2
+      description: Development
+      url: https://simulateurs-fiscaux.dev.echonet
+    - order: 3
+      description: Staging
+      url: https://simulateurs-fiscaux.staging.echonet
+    - order: 4
+      description: Production
+      url: https://simulateurs-fiscaux.bddf.echonet
+
+application:
+  environment: DEV
+
+per:
+  brackets:
+    - min: 0
+      max: 11497
+      rate: 0
+      offset: 0
+    - min: 11498
+      max: 29315
+      rate: 11
+      offset: 1264.67
+    - min: 29316
+      max: 83823
+      rate: 30
+      offset: 6834.52
+    - min: 83824
+      max: 180294
+      rate: 41
+      offset: 16055.05
+    - min: 180295
+      max:
+      rate: 45
+      offset: 23266.81
+  discount:
+    percentage: 0.4525
+    amount:
+      single: 889
+      concubinage: 889
+      couple: 1470
+    limit:
+      single: 1964
+      concubinage: 1964
+      couple: 3249
+  qfCap: 1791
+  qfFirstChildCap: 4224
+  franchise: 61
+  parentsParts:
+    single: 1
+    concubinage: 1
+    couple: 2
+  childrenParts:
+    couple:
+      "1": 0.5
+      "2": 1
+      "3": 2
+      "4": 3
+      "5": 4
+      "6": 5
+    concubinage:
+      "1": 0.5
+      "2": 1
+      "3": 2
+      "4": 3
+      "5": 4
+      "6": 5
+    single:
+      "1": 1
+      "2": 1.5
+      "3": 2.5
+      "4": 3.5
+      "5": 4.5
+      "6": 5.5
+  passN: 47100
+  passNmin1: 46368
+  workerMaxTaxAvailable: 87135
+  defaultTaxAvailable: 4636
+
+
+
+################################################################################
+#                                                                              #
+#                           PVI — CONFIG MÉTIER                                #
+#          (Intégration complète des 3 anciens JSON en YAML)                   #
+#                                                                              #
+################################################################################
+
+
 pvi:
-  # ... (abatement, surtaxBrackets)
+  ########################################################################
+  # 1. ABATTEMENT (ex-abattement.json)                                   #
+  ########################################################################
+  abatement:
+    years:
+      "0":
+        ir: { annualRate: 0, globalAllowanceRate: 0 }
+        ps: { annualRate: 0, globalAllowanceRate: 0 }
+      "1":
+        ir: { annualRate: 0, globalAllowanceRate: 0 }
+        ps: { annualRate: 0, globalAllowanceRate: 0 }
+      "2":
+        ir: { annualRate: 0, globalAllowanceRate: 0 }
+        ps: { annualRate: 0, globalAllowanceRate: 0 }
+      "3":
+        ir: { annualRate: 0, globalAllowanceRate: 0 }
+        ps: { annualRate: 0, globalAllowanceRate: 0 }
+      "4":
+        ir: { annualRate: 0, globalAllowanceRate: 0 }
+        ps: { annualRate: 0, globalAllowanceRate: 0 }
+      "5":
+        ir: { annualRate: 0, globalAllowanceRate: 0 }
+        ps: { annualRate: 0, globalAllowanceRate: 0 }
+      "6":
+        ir: { annualRate: 6, globalAllowanceRate: 6 }
+        ps: { annualRate: 1.65, globalAllowanceRate: 1.65 }
+      "7":
+        ir: { annualRate: 6, globalAllowanceRate: 12 }
+        ps: { annualRate: 1.65, globalAllowanceRate: 3.3 }
+      "8":
+        ir: { annualRate: 6, globalAllowanceRate: 18 }
+        ps: { annualRate: 1.65, globalAllowanceRate: 4.95 }
+      "9":
+        ir: { annualRate: 6, globalAllowanceRate: 24 }
+        ps: { annualRate: 1.65, globalAllowanceRate: 6.6 }
+      "10":
+        ir: { annualRate: 6, globalAllowanceRate: 30 }
+        ps: { annualRate: 1.64, globalAllowanceRate: 8.25 }
+      "11":
+        ir: { annualRate: 6, globalAllowanceRate: 36 }
+        ps: { annualRate: 1.65, globalAllowanceRate: 9.9 }
+      "12":
+        ir: { annualRate: 6, globalAllowanceRate: 42 }
+        ps: { annualRate: 1.65, globalAllowanceRate: 11.55 }
+      "13":
+        ir: { annualRate: 6, globalAllowanceRate: 48 }
+        ps: { annualRate: 1.65, globalAllowanceRate: 13.2 }
+      "14":
+        ir: { annualRate: 6, globalAllowanceRate: 54 }
+        ps: { annualRate: 1.65, globalAllowanceRate: 14.85 }
+      "15":
+        ir: { annualRate: 6, globalAllowanceRate: 60 }
+        ps: { annualRate: 1.65, globalAllowanceRate: 16.5 }
+      "16":
+        ir: { annualRate: 6, globalAllowanceRate: 66 }
+        ps: { annualRate: 1.65, globalAllowanceRate: 18.15 }
+      "17":
+        ir: { annualRate: 6, globalAllowanceRate: 72 }
+        ps: { annualRate: 1.65, globalAllowanceRate: 19.8 }
+      "18":
+        ir: { annualRate: 6, globalAllowanceRate: 78 }
+        ps: { annualRate: 1.65, globalAllowanceRate: 21.45 }
+      "19":
+        ir: { annualRate: 6, globalAllowanceRate: 84 }
+        ps: { annualRate: 1.65, globalAllowanceRate: 23.1 }
+      "20":
+        ir: { annualRate: 6, globalAllowanceRate: 90 }
+        ps: { annualRate: 1.65, globalAllowanceRate: 24.75 }
+      "21":
+        ir: { annualRate: 6, globalAllowanceRate: 96 }
+        ps: { annualRate: 1.65, globalAllowanceRate: 26.4 }
+      "22":
+        ir: { annualRate: 4, globalAllowanceRate: 100 }
+        ps: { annualRate: 1.6, globalAllowanceRate: 28 }
+      "23":
+        ir: { annualRate: null, globalAllowanceRate: 100 }
+        ps: { annualRate: 9, globalAllowanceRate: 37 }
+      "24":
+        ir: { annualRate: null, globalAllowanceRate: 100 }
+        ps: { annualRate: 9, globalAllowanceRate: 46 }
+      "25":
+        ir: { annualRate: null, globalAllowanceRate: 100 }
+        ps: { annualRate: 9, globalAllowanceRate: 55 }
+      "26":
+        ir: { annualRate: null, globalAllowanceRate: 100 }
+        ps: { annualRate: 9, globalAllowanceRate: 64 }
+      "27":
+        ir: { annualRate: null, globalAllowanceRate: 100 }
+        ps: { annualRate: 9, globalAllowanceRate: 73 }
+      "28":
+        ir: { annualRate: null, globalAllowanceRate: 100 }
+        ps: { annualRate: 9, globalAllowanceRate: 82 }
+      "29":
+        ir: { annualRate: null, globalAllowanceRate: 100 }
+        ps: { annualRate: 9, globalAllowanceRate: 91 }
+      "30":
+        ir: { annualRate: null, globalAllowanceRate: 100 }
+        ps: { annualRate: 9, globalAllowanceRate: 100 }
+
+
+  ########################################################################
+  # 2. SURTAXE (ex-texe-pvi.json)                                        #
+  ########################################################################
+  surtaxBrackets:
+    - { min: 0,      max: 50000,  plusValuePercent: 0 }
+    - { min: 50001,  max: 60000,  plusValuePercent: 2, ratio: 0.05 }
+    - { min: 60001,  max: 100000, plusValuePercent: 2 }
+    - { min: 100001, max: 110000, plusValuePercent: 3, ratio: 0.1 }
+    - { min: 110001, max: 150000, plusValuePercent: 3 }
+    - { min: 150001, max: 160000, plusValuePercent: 4, ratio: 0.15 }
+    - { min: 160001, max: 200000, plusValuePercent: 4 }
+    - { min: 200001, max: 210000, plusValuePercent: 5, ratio: 0.2 }
+    - { min: 210001, max: 250000, plusValuePercent: 5 }
+    - { min: 250001, max: 260000, plusValuePercent: 6, ratio: 0.25 }
+    - { min: 260001, max: null,   plusValuePercent: 6 }
+
+
+  ########################################################################
+  # 3. SUGGESTIONS (ex-suggestion.json) — VERSION AVEC "code"            #
+  ########################################################################
   suggestion:
     show: 4
     suggestions:
+
+      #####################################
+      # GENERAL
+      #####################################
       general:
-        - value: "Le montant de l'imposition estimée inclut une surtaxe de 2 à 6 %, dont le montant serait susceptible de varier en cas de pluralité de cédants."
-          url: "/vendrehashtaghashtaghashtag#impots-payer-pvi"
+        - code: PVI_GEN_01
           condition:
             part1: taxableCapitalGain
             operator: ">"
             part2: 50000
+
+      #####################################
+      # FINANCIER
+      #####################################
       financier:
-        - value: "L'impôt afférent à la plus-value est dû lors de la cession de l'immeuble et acquitté par le notaire en charge de l'opération."
-          url: "/vendrehashtaghashtaghashtag#impots-payer-pvi"
+        - code: PVI_FIN_01
           condition:
             part1: impots
             operator: ">"
             part2: 0
+
+      #####################################
+      # JURIDIQUE
+      #####################################
       juridique:
-        - value: "En cas de cession d'un bien démembré, le nu-propriétaire doit obtenir l'accord de l'usufruitier pour céder."
-          url: ""
-        - value: "La cession du domicile conjugual nécessite l'accord des deux époux, quel que soit le régime matrimonial."
-          url: ""
+        - code: PVI_JUR_01
+        - code: PVI_JUR_02
           condition:
             part1: propertyUse
             operator: "=="
             part2: primary-residence
-        # ... tu continues avec les autres entrées
+        - code: PVI_JUR_03
+        - code: PVI_JUR_04
+          condition:
+            part1: propertyUse
+            operator: "=="
+            part2: primary-residence
+
+      #####################################
+      # FISCAL
+      #####################################
       fiscal:
-        - value: "Lorsque l'immeuble a été occupé par le cédant jusqu'à sa mise en vente, il est admis que l'exonération reste acquise si la cession intervient dans des délais normaux."
-          url: "/vendrehashtaghashtaghashtag#exo-beneficier"
+        - code: PVI_FIS_01
           condition:
             part1: propertyUse
             operator: "=="
             part2: primary-residence
-        # ... et ainsi de suite avec toutes les entrées de ton JSON
+
+        - code: PVI_FIS_02
+          condition:
+            part1: grossCapitalGain
+            operator: ">"
+            part2: 0
+
+        - code: PVI_FIS_03
+          condition:
+            part1: taxableCapitalGain
+            operator: ">"
+            part2: 0
+
+        - code: PVI_FIS_04
+          condition:
+            part1: taxableCapitalGain
+            operator: ">"
+            part2: 0
+
+        - code: PVI_FIS_05
+          condition:
+            part1:
+              part1: propertyUse
+              operator: "=="
+              part2: secondary-residence
+            operator: "||"
+            part2:
+              part1: propertyUse
+              operator: "=="
+              part2: location
+
+        - code: PVI_FIS_06
+          condition:
+            part1: holdingPeriodYears
+            operator: ">"
+            part2: 30
+
+        - code: PVI_FIS_07
+          condition:
+            part1: holdingPeriodYears
+            operator: ">"
+            part2: 22
+
+        - code: PVI_FIS_08
+
+        - code: PVI_FIS_09
+          condition:
+            part1: grossCapitalGain
+            operator: "<"
+            part2: 0
+
+        - code: PVI_FIS_10
+
+        - code: PVI_FIS_11
+          condition:
+            part1: propertyType
+            operator: "=="
+            part2: land
+
+        - code: PVI_FIS_12
+          condition:
+            part1: acquisitionOrigin
+            operator: "=="
+            part2: gift
+
+        - code: PVI_FIS_13
+
+        - code: PVI_FIS_14
