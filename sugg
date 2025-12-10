@@ -1,422 +1,381 @@
+# -------------------------------------------------------------------
+#                          PVI CONFIG
+# -------------------------------------------------------------------
 pvi:
-
-  # -----------------------------------
-  # 1. SURTAX BRACKETS (texe-pvi.json)
-  # -----------------------------------
-  surtaxBrackets:
-    - min: 0
-      max: 50000
-      pourcentagePlusValue: 0
-      rapport: 0
-
-    - min: 50001
-      max: 60000
-      pourcentagePlusValue: 2
-      rapport: 0.05
-
-    - min: 60001
-      max: 100000
-      pourcentagePlusValue: 2
-      rapport: 0
-
-    - min: 100001
-      max: 110000
-      pourcentagePlusValue: 3
-      rapport: 0.1
-
-    - min: 110001
-      max: 150000
-      pourcentagePlusValue: 3
-      rapport: 0
-
-    - min: 150001
-      max: 160000
-      pourcentagePlusValue: 4
-      rapport: 0.15
-
-    - min: 160001
-      max: 200000
-      pourcentagePlusValue: 4
-      rapport: 0
-
-    - min: 200001
-      max: 210000
-      pourcentagePlusValue: 5
-      rapport: 0.2
-
-    - min: 210001
-      max: 250000
-      pourcentagePlusValue: 5
-      rapport: 0
-
-    - min: 250001
-      max: 260000
-      pourcentagePlusValue: 6
-      rapport: 0.25
-
-    - min: 260001
-      max:
-      pourcentagePlusValue: 6
-      rapport: 0
-
-  # -----------------------------------
-  # 2. ABATTEMENTS (abattement.json)
-  # -----------------------------------
-  abattements:
-    - year: 0
+  # ================= ABATTEMENT (abattement.json) ==================
+  # Map : nombre d'années de détention -> DeductionYearVO (IR/PS)
+  deductionsByYear:
+    "0":
       ir:
         tauxAnnuel: 0
         tauxAbattementGlobal: 0
       ps:
         tauxAnnuel: 0
         tauxAbattementGlobal: 0
-
-    - year: 1
+    "1":
       ir:
         tauxAnnuel: 0
         tauxAbattementGlobal: 0
       ps:
         tauxAnnuel: 0
         tauxAbattementGlobal: 0
-
-    - year: 2
+    "2":
       ir:
         tauxAnnuel: 0
         tauxAbattementGlobal: 0
       ps:
         tauxAnnuel: 0
         tauxAbattementGlobal: 0
-
-    - year: 3
+    "3":
       ir:
         tauxAnnuel: 0
         tauxAbattementGlobal: 0
       ps:
         tauxAnnuel: 0
         tauxAbattementGlobal: 0
-
-    - year: 4
+    "4":
       ir:
         tauxAnnuel: 0
         tauxAbattementGlobal: 0
       ps:
         tauxAnnuel: 0
         tauxAbattementGlobal: 0
-
-    - year: 5
+    "5":
       ir:
         tauxAnnuel: 0
         tauxAbattementGlobal: 0
       ps:
         tauxAnnuel: 0
         tauxAbattementGlobal: 0
-
-    - year: 6
+    "6":
       ir:
         tauxAnnuel: 6
         tauxAbattementGlobal: 6
       ps:
         tauxAnnuel: 1.65
         tauxAbattementGlobal: 1.65
-
-    - year: 7
+    "7":
       ir:
         tauxAnnuel: 6
         tauxAbattementGlobal: 12
       ps:
         tauxAnnuel: 1.65
         tauxAbattementGlobal: 3.3
-
-    - year: 8
+    "8":
       ir:
         tauxAnnuel: 6
         tauxAbattementGlobal: 18
       ps:
         tauxAnnuel: 1.65
         tauxAbattementGlobal: 4.95
-
-    - year: 9
+    "9":
       ir:
         tauxAnnuel: 6
         tauxAbattementGlobal: 24
       ps:
         tauxAnnuel: 1.65
         tauxAbattementGlobal: 6.6
-
-    - year: 10
+    "10":
       ir:
         tauxAnnuel: 6
         tauxAbattementGlobal: 30
       ps:
         tauxAnnuel: 1.64
         tauxAbattementGlobal: 8.25
-
-    - year: 11
+    "11":
       ir:
         tauxAnnuel: 6
         tauxAbattementGlobal: 36
       ps:
         tauxAnnuel: 1.65
         tauxAbattementGlobal: 9.9
-
-    - year: 12
+    "12":
       ir:
         tauxAnnuel: 6
         tauxAbattementGlobal: 42
       ps:
         tauxAnnuel: 1.65
         tauxAbattementGlobal: 11.55
-
-    - year: 13
+    "13":
       ir:
         tauxAnnuel: 6
         tauxAbattementGlobal: 48
       ps:
         tauxAnnuel: 1.65
         tauxAbattementGlobal: 13.2
-
-    - year: 14
+    "14":
       ir:
         tauxAnnuel: 6
         tauxAbattementGlobal: 54
       ps:
         tauxAnnuel: 1.65
         tauxAbattementGlobal: 14.85
-
-    - year: 15
+    "15":
       ir:
         tauxAnnuel: 6
         tauxAbattementGlobal: 60
       ps:
         tauxAnnuel: 1.65
         tauxAbattementGlobal: 16.5
-
-    - year: 16
+    "16":
       ir:
         tauxAnnuel: 6
         tauxAbattementGlobal: 66
       ps:
         tauxAnnuel: 1.65
         tauxAbattementGlobal: 18.15
-
-    - year: 17
+    "17":
       ir:
         tauxAnnuel: 6
         tauxAbattementGlobal: 72
       ps:
         tauxAnnuel: 1.65
         tauxAbattementGlobal: 19.8
-
-    - year: 18
+    "18":
       ir:
         tauxAnnuel: 6
         tauxAbattementGlobal: 78
       ps:
         tauxAnnuel: 1.65
         tauxAbattementGlobal: 21.45
-
-    - year: 19
+    "19":
       ir:
         tauxAnnuel: 6
         tauxAbattementGlobal: 84
       ps:
         tauxAnnuel: 1.65
         tauxAbattementGlobal: 23.1
-
-    - year: 20
+    "20":
       ir:
         tauxAnnuel: 6
         tauxAbattementGlobal: 90
       ps:
         tauxAnnuel: 1.65
         tauxAbattementGlobal: 24.75
-
-    - year: 21
+    "21":
       ir:
         tauxAnnuel: 6
         tauxAbattementGlobal: 96
       ps:
         tauxAnnuel: 1.65
         tauxAbattementGlobal: 26.4
-
-    - year: 22
+    "22":
       ir:
         tauxAnnuel: 4
         tauxAbattementGlobal: 100
       ps:
         tauxAnnuel: 1.6
         tauxAbattementGlobal: 28
-
-    - year: 23
+    "23":
       ir:
-        tauxAnnuel:
+        tauxAnnuel: null
         tauxAbattementGlobal: 100
       ps:
         tauxAnnuel: 9
         tauxAbattementGlobal: 37
-
-    - year: 24
+    "24":
       ir:
-        tauxAnnuel:
+        tauxAnnuel: null
         tauxAbattementGlobal: 100
       ps:
         tauxAnnuel: 9
         tauxAbattementGlobal: 46
-
-    - year: 25
+    "25":
       ir:
-        tauxAnnuel:
+        tauxAnnuel: null
         tauxAbattementGlobal: 100
       ps:
         tauxAnnuel: 9
         tauxAbattementGlobal: 55
-
-    - year: 26
+    "26":
       ir:
-        tauxAnnuel:
+        tauxAnnuel: null
         tauxAbattementGlobal: 100
       ps:
         tauxAnnuel: 9
         tauxAbattementGlobal: 64
-
-    - year: 27
+    "27":
       ir:
-        tauxAnnuel:
+        tauxAnnuel: null
         tauxAbattementGlobal: 100
       ps:
         tauxAnnuel: 9
         tauxAbattementGlobal: 73
-
-    - year: 28
+    "28":
       ir:
-        tauxAnnuel:
+        tauxAnnuel: null
         tauxAbattementGlobal: 100
       ps:
         tauxAnnuel: 9
         tauxAbattementGlobal: 82
-
-    - year: 29
+    "29":
       ir:
-        tauxAnnuel:
+        tauxAnnuel: null
         tauxAbattementGlobal: 100
       ps:
         tauxAnnuel: 9
         tauxAbattementGlobal: 91
-
-    - year: 30
+    "30":
       ir:
-        tauxAnnuel:
+        tauxAnnuel: null
         tauxAbattementGlobal: 100
       ps:
         tauxAnnuel: 9
         tauxAbattementGlobal: 100
 
-  # -----------------------------------
-  # 3. SUGGESTIONS (codes + conditions)
-  #    (value + url seront gérés au FRONT)
-  # -----------------------------------
-  suggestions:
+  # =============== SURTAXE PVI (texe-pvi.json) =====================
+  # List<CapitalGainTaxBracketVO>
+  capitalGainSurtaxBrackets:
+    - min: 0
+      max: 50000
+      pourcentagePlusValue: 0
+    - min: 50001
+      max: 60000
+      pourcentagePlusValue: 2
+      rapport: 0.05
+    - min: 60001
+      max: 100000
+      pourcentagePlusValue: 2
+    - min: 100001
+      max: 110000
+      pourcentagePlusValue: 3
+      rapport: 0.1
+    - min: 110001
+      max: 150000
+      pourcentagePlusValue: 3
+    - min: 150001
+      max: 160000
+      pourcentagePlusValue: 4
+      rapport: 0.15
+    - min: 160001
+      max: 200000
+      pourcentagePlusValue: 4
+    - min: 200001
+      max: 210000
+      pourcentagePlusValue: 5
+      rapport: 0.2
+    - min: 210001
+      max: 250000
+      pourcentagePlusValue: 5
+    - min: 250001
+      max: 260000
+      pourcentagePlusValue: 6
+      rapport: 0.25
+    - min: 260001
+      # max null => pas de plafond, dernière tranche ouverte
+      pourcentagePlusValue: 6
+
+  # ================= SUGGESTIONS (suggestion.json) =================
+  suggestion:
     show: 4
+    suggestions:
 
-    general:
-      - code: GEN_SURTAX_PLURALITY
-        condition:
-          part1: taxableCapitalGain
-          operator: ">"
-          part2: 50000
+      general:
+        - value: PVI_SUGG_GENERAL_01_VALUE
+          url: PVI_SUGG_GENERAL_01_URL
+          condition:
+            part1: taxableCapitalGain
+            operator: ">"
+            part2: 50000
 
-    financier:
-      - code: FIN_TAX_DUE_AT_SALE
-        condition:
-          part1: impots
-          operator: ">"
-          part2: 0
+      financier:
+        - value: PVI_SUGG_FINANCIER_01_VALUE
+          url: PVI_SUGG_FINANCIER_01_URL
+          condition:
+            part1: impots
+            operator: ">"
+            part2: 0
 
-    juridique:
-      - code: JUR_USUFRUCT_AGREEMENT
-      - code: JUR_MARITAL_HOME_AGREEMENT
-        condition:
-          part1: propertyUse
-          operator: "=="
-          part2: primary-residence
-      - code: JUR_INDIVISION_UNANIMITY
-      - code: JUR_PRIMARY_RESIDENCE_DEMEMBREMENT
-        condition:
-          part1: propertyUse
-          operator: "=="
-          part2: primary-residence
-
-    fiscal:
-      - code: FIS_PRIMARY_OCCUPATION_DELAY
-        condition:
-          part1: propertyUse
-          operator: "=="
-          part2: primary-residence
-
-      - code: FIS_IFI_PLAFONNEMENT
-        condition:
-          part1: grossCapitalGain
-          operator: ">"
-          part2: 0
-
-      - code: FIS_DECLARE_NEXT_YEAR
-        condition:
-          part1: taxableCapitalGain
-          operator: ">"
-          part2: 0
-
-      - code: FIS_HIGH_INCOME_CONTRIBUTION
-        condition:
-          part1: taxableCapitalGain
-          operator: ">"
-          part2: 0
-
-      - code: FIS_FIRST_NON_PRINCIPAL_REINVEST
-        condition:
-          part1:
+      juridique:
+        - value: PVI_SUGG_JURIDIQUE_01_VALUE
+          url: PVI_SUGG_JURIDIQUE_01_URL
+        - value: PVI_SUGG_JURIDIQUE_02_VALUE
+          url: PVI_SUGG_JURIDIQUE_02_URL
+          condition:
             part1: propertyUse
             operator: "=="
-            part2: secondary-residence
-          operator: "||"
-          part2:
+            part2: primary-residence
+        - value: PVI_SUGG_JURIDIQUE_03_VALUE
+          url: PVI_SUGG_JURIDIQUE_03_URL
+        - value: PVI_SUGG_JURIDIQUE_04_VALUE
+          url: PVI_SUGG_JURIDIQUE_04_URL
+          condition:
             part1: propertyUse
             operator: "=="
-            part2: location
+            part2: primary-residence
 
-      - code: FIS_HELD_OVER_30_YEARS
-        condition:
-          part1: holdingPeriodYears
-          operator: ">"
-          part2: 30
-
-      - code: FIS_HELD_OVER_22_YEARS_PS_ONLY
-        condition:
-          part1: holdingPeriodYears
-          operator: ">"
-          part2: 22
-
-      - code: FIS_SOCIAL_HOUSING_EXEMPTION
-
-      - code: FIS_NO_OFFSET_LOSSES
-        condition:
-          part1: grossCapitalGain
-          operator: "<"
-          part2: 0
-
-      - code: FIS_NO_COMPENSATION_IMMOBLES
-
-      - code: FIS_LAND_VAT
-        condition:
-          part1: propertyType
-          operator: "=="
-          part2: land
-
-      - code: FIS_GIFT_DUTIES_ADD_TO_PRICE
-        condition:
-          part1: acquisitionOrigin
-          operator: "=="
-          part2: gift
-
-      - code: FIS_SCI_HOLDING_PERIOD_SOCIETY
-
-      - code: FIS_IFI_SIMULATOR
+      fiscal:
+        - value: PVI_SUGG_FISCAL_01_VALUE
+          url: PVI_SUGG_FISCAL_01_URL
+          condition:
+            part1: propertyUse
+            operator: "=="
+            part2: primary-residence
+        - value: PVI_SUGG_FISCAL_02_VALUE
+          url: PVI_SUGG_FISCAL_02_URL
+          condition:
+            part1: grossCapitalGain
+            operator: ">"
+            part2: 0
+        - value: PVI_SUGG_FISCAL_03_VALUE
+          url: PVI_SUGG_FISCAL_03_URL
+          condition:
+            part1: taxableCapitalGain
+            operator: ">"
+            part2: 0
+        - value: PVI_SUGG_FISCAL_04_VALUE
+          url: PVI_SUGG_FISCAL_04_URL
+          condition:
+            part1: taxableCapitalGain
+            operator: ">"
+            part2: 0
+        - value: PVI_SUGG_FISCAL_05_VALUE
+          url: PVI_SUGG_FISCAL_05_URL
+          condition:
+            part1:
+              part1: propertyUse
+              operator: "=="
+              part2: secondary-residence
+            operator: "||"
+            part2:
+              part1: propertyUse
+              operator: "=="
+              part2: location
+        - value: PVI_SUGG_FISCAL_06_VALUE
+          url: PVI_SUGG_FISCAL_06_URL
+          condition:
+            part1: holdingPeriodYears
+            operator: ">"
+            part2: 30
+        - value: PVI_SUGG_FISCAL_07_VALUE
+          url: PVI_SUGG_FISCAL_07_URL
+          condition:
+            part1: holdingPeriodYears
+            operator: ">"
+            part2: 22
+        - value: PVI_SUGG_FISCAL_08_VALUE
+          url: PVI_SUGG_FISCAL_08_URL
+        - value: PVI_SUGG_FISCAL_09_VALUE
+          url: PVI_SUGG_FISCAL_09_URL
+          condition:
+            part1: grossCapitalGain
+            operator: "<"
+            part2: 0
+        - value: PVI_SUGG_FISCAL_10_VALUE
+          url: PVI_SUGG_FISCAL_10_URL
+        - value: PVI_SUGG_FISCAL_11_VALUE
+          url: PVI_SUGG_FISCAL_11_URL
+          condition:
+            part1: propertyType
+            operator: "=="
+            part2: land
+        - value: PVI_SUGG_FISCAL_12_VALUE
+          url: PVI_SUGG_FISCAL_12_URL
+          condition:
+            part1: acquisitionOrigin
+            operator: "=="
+            part2: gift
+        - value: PVI_SUGG_FISCAL_13_VALUE
+          url: PVI_SUGG_FISCAL_13_URL
+        - value: PVI_SUGG_FISCAL_14_VALUE
+          url: PVI_SUGG_FISCAL_14_URL
