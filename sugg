@@ -1,158 +1,37 @@
-Parfait, on fait le « dictionnaire FR → EN » du PVI pour que tu puisses tout renommer proprement dans IntelliJ.
-Je me base sur le code que tu m’as envoyé (PviSimulationService) + tout ce qu’on a déjà vu sur le projet.
-
-1. Classes / enums à renommer (ou à vérifier)
-Services
-Nom actuel (FR / mixte)	Type	Proposition en anglais
-PviSimulationService	classe	PviSimulationService (OK) ou PviCalculatorService
-PlusValueBruteCalculator	classe	GrossCapitalGainCalculator
-TaxePlusValueService	classe	CapitalGainSurtaxService
-AbattementService	classe	AllowanceService ou AbatementService
-TravauxMessageService	classe	RenovationMessageService ou WorksMessageService
-DetentionCalculator	classe	HoldingPeriodCalculator
-SuggestionEngine	classe	SuggestionEngine (OK)
-AnniversaryService	classe	AnniversaryService (OK)
-TaxCalculator	classe	TaxCalculator (OK)
-TaxBreakdown	classe	TaxBreakdown (OK)
-Enums fonctionnels
-Nom actuel	Type	Proposition en anglais
-TypeBien	enum	PropertyType
-UsageBien	enum	PropertyUse ou PropertyUsage
-OrigineBien	enum	AcquisitionOrigin
-(bool / enum) Travaux	champ	hasRenovation (bool) ou RenovationFlag
-TaxOutcomeState	enum	TaxOutcomeState (OK, mais valeurs FR)
-2. PviSimulationRequest – champs à traduire
-
-À partir de ton computeAnniversaryMessage :
-
-var newReq = new PviSimulationRequest(
-    req.typeBien(),
-    req.usageBien(),
-    req.origineBien(),
-    req.dateOrigine(),
-    anniversaryDate,
-    req.prixOrigine(),
-    req.fraisOrigine(),
-    req.fraisReels(),
-    req.prixVente(),
-    req.fraisVente(),
-    req.travaux(),
-    req.montantTravaux()
-);
-
-
-Je te propose :
-
-Nom actuel (record)	Suggestion en anglais
-typeBien	propertyType
-usageBien	propertyUse
-origineBien	acquisitionOrigin
-dateOrigine	acquisitionDate
-dateVente	saleDate
-prixOrigine	acquisitionPrice
-fraisOrigine	acquisitionCosts
-fraisReels	actualAcquisitionCosts ou actualCosts
-prixVente	salePrice
-fraisVente	sellingCosts ou saleCosts
-travaux	hasRenovation (bool)
-montantTravaux	renovationAmount
-3. PviSimulationResult – champs à traduire
-
-Dans ton builder :
-
-var builder = PviSimulationResult.builder()
-    .detentionAnnee(detention)
-    .prixCession(prixCession)
-    .plusValueBrute(plusValueBrute)
-    .plusValueNette(taxes.baseIr())
-    .prixRevient(prixRevient)
-    .impotRevenu(taxes.impotRevenu())
-    .prelevementsSociaux(taxes.prelevementsSociaux())
-    .taxePlusValue(taxes.taxePlusValue())
-    .impotsTotaux(taxes.total())
-    .netDispo(netDispo)
-    .pressionFiscale(pressionFiscale)
-    .taxOutcomeState(state);
-
-
-Puis :
-
-builder.messageTravaux(worksMsg);
-builder.messageAnniversaire(anniversaireMsg);
-
-
-Proposition :
-
-Nom actuel	Suggestion en anglais
-detentionAnnee	holdingPeriodYears
-prixCession	netSaleProceeds ou saleProceeds
-plusValueBrute	grossCapitalGain
-plusValueNette	taxableCapitalGain
-prixRevient	costBasis ou adjustedCostBasis
-impotRevenu	incomeTax
-prelevementsSociaux	socialContributions
-taxePlusValue	capitalGainSurtax
-impotsTotaux	totalTaxes
-netDispo	netProceeds
-pressionFiscale	taxBurdenRate ou effectiveTaxRate
-messageTravaux	renovationMessage
-messageAnniversaire	anniversaryMessage
-taxOutcomeState	taxOutcomeState (OK)
-4. Enum values de TaxOutcomeState
-
-Actuels (d’après tes scénarios + code) :
-
-NON_IMPOSABLE_MOINS_VALUE
-NON_IMPOSABLE_SEUIL_PRIX_VENTE
-NON_IMPOSABLE_RESIDENCE_PRINCIPALE
-NON_IMPOSABLE_EXONERATION_DUREE
-IMPOSABLE_PS_SEULEMENT
-IMPOSABLE_IR_PS_SURTAXE
-IMPOSABLE_IR_PS
-
-
-Proposition :
-
-Actuel	Suggestion en anglais
-NON_IMPOSABLE_MOINS_VALUE	NON_TAXABLE_CAPITAL_LOSS
-NON_IMPOSABLE_SEUIL_PRIX_VENTE	NON_TAXABLE_SALE_PRICE_THRESHOLD
-NON_IMPOSABLE_RESIDENCE_PRINCIPALE	NON_TAXABLE_PRIMARY_RESIDENCE
-NON_IMPOSABLE_EXONERATION_DUREE	NON_TAXABLE_HOLDING_PERIOD_EXEMPTION
-IMPOSABLE_PS_SEULEMENT	TAXABLE_SOCIAL_CONTRIBUTIONS_ONLY
-IMPOSABLE_IR_PS_SURTAXE	TAXABLE_INCOME_SOCIAL_SURTAX
-IMPOSABLE_IR_PS	TAXABLE_INCOME_SOCIAL
-5. Enums métier (type / usage / origine / travaux)
-TypeBien → PropertyType
-Actuel	Proposition
-APPARTEMENT	APARTMENT
-MAISON	HOUSE
-TERRAIN	LAND
-UsageBien → PropertyUse
-Actuel	Proposition
-RESIDENCE_PRINCIPALE	PRIMARY_RESIDENCE
-RESIDENCE_SECONDAIRE	SECONDARY_RESIDENCE
-(éventuellement) LOUE	RENTAL_PROPERTY
-OrigineBien → AcquisitionOrigin
-Actuel	Proposition
-ACHAT	PURCHASE
-DONATION	GIFT
-SUCCESSION	INHERITANCE
-Travaux (champ booléen / enum)
-Actuel	Proposition
-OUI	YES / true
-NON	NO / false
-6. Quelques autres termes fréquents (dans les services)
-
-Tu risques aussi d’avoir ce genre de noms :
-
-FR	EN proposé
-abattementBrut	grossAllowance
-abattementIr	incomeTaxAllowance
-abattementPs	socialContributionAllowance
-tauxIr	incomeTaxRate
-tauxPs	socialContributionRate
-tauxTaxePlusValue	capitalGainSurtaxRate
-seuilPrixVente	salePriceThreshold
-seuilSurtaxePv	capitalGainSurtaxThreshold
-dateAnniversaire	anniversaryDate
-messageAnniversaire	anniversaryMessage
+pvi:
+  # ... (abatement, surtaxBrackets)
+  suggestion:
+    show: 4
+    suggestions:
+      general:
+        - value: "Le montant de l'imposition estimée inclut une surtaxe de 2 à 6 %, dont le montant serait susceptible de varier en cas de pluralité de cédants."
+          url: "/vendrehashtaghashtaghashtag#impots-payer-pvi"
+          condition:
+            part1: taxableCapitalGain
+            operator: ">"
+            part2: 50000
+      financier:
+        - value: "L'impôt afférent à la plus-value est dû lors de la cession de l'immeuble et acquitté par le notaire en charge de l'opération."
+          url: "/vendrehashtaghashtaghashtag#impots-payer-pvi"
+          condition:
+            part1: impots
+            operator: ">"
+            part2: 0
+      juridique:
+        - value: "En cas de cession d'un bien démembré, le nu-propriétaire doit obtenir l'accord de l'usufruitier pour céder."
+          url: ""
+        - value: "La cession du domicile conjugual nécessite l'accord des deux époux, quel que soit le régime matrimonial."
+          url: ""
+          condition:
+            part1: propertyUse
+            operator: "=="
+            part2: primary-residence
+        # ... tu continues avec les autres entrées
+      fiscal:
+        - value: "Lorsque l'immeuble a été occupé par le cédant jusqu'à sa mise en vente, il est admis que l'exonération reste acquise si la cession intervient dans des délais normaux."
+          url: "/vendrehashtaghashtaghashtag#exo-beneficier"
+          condition:
+            part1: propertyUse
+            operator: "=="
+            part2: primary-residence
+        # ... et ainsi de suite avec toutes les entrées de ton JSON
