@@ -1,76 +1,44 @@
-package com.bnpparibas.dsibddf.a100919.fis;
+Dans le domaine : Définis une interface pour les propriétés.
 
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config.PviBusinessProperties;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config.PviBusinessProperties.AbatementProperties;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config.PviBusinessProperties.SurtaxBracket;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config.PviBusinessProperties.SuggestionProperties;
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
+// Dans le module domaine
+public interface PviBusinessPropertiesProvider {
+    String getSomeSetting();
+    // autres méthodes pour les propriétés nécessaires
+}
 
-import java.math.BigDecimal;
 
-import static org.assertj.core.api.Assertions.assertThat;
+Dans le module d’exposition : Implémente cette interface et configure-la avec les données du YAML.
 
-/**
- * Integration test to validate that PviBusinessProperties
- * is correctly bound from application.yml.
- */
-@SpringBootTest
-class PviBusinessPropertiesIT {
+// Dans le module d’exposition
+@Component
+public class PviBusinessPropertiesProviderImpl implements PviBusinessPropertiesProvider {
+
+    private final PviBusinessProperties pviBusinessProperties;
 
     @Autowired
-    private PviBusinessProperties pviBusinessProperties;
-
-    @Test
-    void shouldLoadPviBusinessPropertiesFromYaml() {
-        assertThat(pviBusinessProperties).isNotNull();
-
-        // ----------------- Abatement -----------------
-        AbatementProperties abatement = pviBusinessProperties.getAbatement();
-        assertThat(abatement).isNotNull();
-        assertThat(abatement.getYears()).isNotEmpty();
-
-        // Year "6" from YAML:
-        var year6 = abatement.getYears().get("6");
-        assertThat(year6).isNotNull();
-        assertThat(year6.getIr().getAnnualRate())
-                .as("IR annualRate for year 6")
-                .isEqualByComparingTo(BigDecimal.valueOf(6));
-        assertThat(year6.getPs().getGlobalAllowanceRate())
-                .as("PS globalAllowanceRate for year 6")
-                .isEqualByComparingTo(BigDecimal.valueOf(1.65));
-
-        // ----------------- Surtax brackets -----------------
-        assertThat(pviBusinessProperties.getSurtaxBrackets())
-                .as("surtaxBrackets should not be empty")
-                .isNotEmpty();
-
-        SurtaxBracket firstBracket = pviBusinessProperties.getSurtaxBrackets().get(0);
-        assertThat(firstBracket.getMin())
-                .as("first bracket min")
-                .isEqualByComparingTo(BigDecimal.ZERO);
-        assertThat(firstBracket.getMax())
-                .as("first bracket max")
-                .isEqualByComparingTo(BigDecimal.valueOf(50000));
-        assertThat(firstBracket.getPlusValuePercent())
-                .as("first bracket plusValuePercent")
-                .isEqualByComparingTo(BigDecimal.ZERO);
-
-        // ----------------- Suggestions -----------------
-        SuggestionProperties suggestion = pviBusinessProperties.getSuggestion();
-        assertThat(suggestion).isNotNull();
-        assertThat(suggestion.getShow()).isEqualTo(4);
-        assertThat(suggestion.getSuggestions()).isNotEmpty();
-
-        var fiscalSuggestions = suggestion.getSuggestions().get("fiscal");
-        assertThat(fiscalSuggestions)
-                .as("fiscal suggestions should not be empty")
-                .isNotEmpty();
-
-        // Example: first fiscal suggestion code should be PVI_FIS_01
-        assertThat(fiscalSuggestions.get(0).getCode())
-                .as("first fiscal suggestion code")
-                .isEqualTo("PVI_FIS_01");
+    public PviBusinessPropertiesProviderImpl(PviBusinessProperties pviBusinessProperties) {
+        this.pviBusinessProperties = pviBusinessProperties;
     }
+
+    @Override
+    public String getSomeSetting() {
+        return pviBusinessProperties.getSomeSetting();
+    }
+}
+
+
+Dans le module domaine : Injecte simplement l’interface et utilise-la.
+
+// Dans le module domaine
+@Service
+public class PviSimulationService {
+
+    private final PviBusinessPropertiesProvider propertiesProvider;
+
+    @Autowired
+    public PviSimulationService(PviBusinessPropertiesProvider propertiesProvider) {
+        this.propertiesProvider = propertiesProvider;
+    }
+
+    // Utilise les propriétés via l’interface
 }
