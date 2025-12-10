@@ -1,9 +1,71 @@
-# -------------------------------------------------------------------
-#                          PVI CONFIG
-# -------------------------------------------------------------------
+package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo;
+
+import java.util.Map;
+
+public record SuggestionVO(
+    String category,              // "general", "financier", "juridique", "fiscal"
+    String value,                 // code de texte : ex "PVI_SUGG_FISCAL_01_VALUE"
+    String url,                   // code d'URL : ex "PVI_SUGG_FISCAL_01_URL"
+    Map<String, Object> condition // structure de la condition (arbre AND/OR, etc.)
+) {}
+
+
+
+package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config;
+
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.CapitalGainTaxBracketVO;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.DeductionYearVO;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.SuggestionVO;
+import lombok.Getter;
+import lombok.Setter;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+import java.util.Map;
+
+@Getter
+@Setter
+@Component
+@ConfigurationProperties(prefix = "pvi")
+public class PviBusinessProperties {
+
+    /**
+     * Map : nombre d'années de détention -> DeductionYearVO (IR / PS)
+     * Source : pvi.deductionsByYear
+     */
+    private Map<Integer, DeductionYearVO> deductionsByYear;
+
+    /**
+     * Tranches de surtaxe sur la plus-value (surtaxe PVI).
+     * Source : pvi.capitalGainSurtaxBrackets
+     */
+    private List<CapitalGainTaxBracketVO> capitalGainSurtaxBrackets;
+
+    /**
+     * Suggestions (général, financier, juridique, fiscal).
+     * Source : pvi.suggestion
+     */
+    private SuggestionProperties suggestion;
+
+    @Getter
+    @Setter
+    public static class SuggestionProperties {
+        /** Nombre max de suggestions à afficher. */
+        private int show;
+
+        /**
+         * Map : catégorie -> liste de SuggestionVO.
+         * Catégories typiques : general, financier, juridique, fiscal
+         */
+        private Map<String, List<SuggestionVO>> suggestions;
+    }
+}
+
+
+
 pvi:
   # ================= ABATTEMENT (abattement.json) ==================
-  # Map : nombre d'années de détention -> DeductionYearVO (IR/PS)
   deductionsByYear:
     "0":
       ir:
@@ -224,7 +286,6 @@ pvi:
         tauxAbattementGlobal: 100
 
   # =============== SURTAXE PVI (texe-pvi.json) =====================
-  # List<CapitalGainTaxBracketVO>
   capitalGainSurtaxBrackets:
     - min: 0
       max: 50000
@@ -262,7 +323,6 @@ pvi:
       pourcentagePlusValue: 6
       rapport: 0.25
     - min: 260001
-      # max null => pas de plafond, dernière tranche ouverte
       pourcentagePlusValue: 6
 
   # ================= SUGGESTIONS (suggestion.json) =================
@@ -271,7 +331,8 @@ pvi:
     suggestions:
 
       general:
-        - value: PVI_SUGG_GENERAL_01_VALUE
+        - category: general
+          value: PVI_SUGG_GENERAL_01_VALUE
           url: PVI_SUGG_GENERAL_01_URL
           condition:
             part1: taxableCapitalGain
@@ -279,7 +340,8 @@ pvi:
             part2: 50000
 
       financier:
-        - value: PVI_SUGG_FINANCIER_01_VALUE
+        - category: financier
+          value: PVI_SUGG_FINANCIER_01_VALUE
           url: PVI_SUGG_FINANCIER_01_URL
           condition:
             part1: impots
@@ -287,17 +349,21 @@ pvi:
             part2: 0
 
       juridique:
-        - value: PVI_SUGG_JURIDIQUE_01_VALUE
+        - category: juridique
+          value: PVI_SUGG_JURIDIQUE_01_VALUE
           url: PVI_SUGG_JURIDIQUE_01_URL
-        - value: PVI_SUGG_JURIDIQUE_02_VALUE
+        - category: juridique
+          value: PVI_SUGG_JURIDIQUE_02_VALUE
           url: PVI_SUGG_JURIDIQUE_02_URL
           condition:
             part1: propertyUse
             operator: "=="
             part2: primary-residence
-        - value: PVI_SUGG_JURIDIQUE_03_VALUE
+        - category: juridique
+          value: PVI_SUGG_JURIDIQUE_03_VALUE
           url: PVI_SUGG_JURIDIQUE_03_URL
-        - value: PVI_SUGG_JURIDIQUE_04_VALUE
+        - category: juridique
+          value: PVI_SUGG_JURIDIQUE_04_VALUE
           url: PVI_SUGG_JURIDIQUE_04_URL
           condition:
             part1: propertyUse
@@ -305,31 +371,36 @@ pvi:
             part2: primary-residence
 
       fiscal:
-        - value: PVI_SUGG_FISCAL_01_VALUE
+        - category: fiscal
+          value: PVI_SUGG_FISCAL_01_VALUE
           url: PVI_SUGG_FISCAL_01_URL
           condition:
             part1: propertyUse
             operator: "=="
             part2: primary-residence
-        - value: PVI_SUGG_FISCAL_02_VALUE
+        - category: fiscal
+          value: PVI_SUGG_FISCAL_02_VALUE
           url: PVI_SUGG_FISCAL_02_URL
           condition:
             part1: grossCapitalGain
             operator: ">"
             part2: 0
-        - value: PVI_SUGG_FISCAL_03_VALUE
+        - category: fiscal
+          value: PVI_SUGG_FISCAL_03_VALUE
           url: PVI_SUGG_FISCAL_03_URL
           condition:
             part1: taxableCapitalGain
             operator: ">"
             part2: 0
-        - value: PVI_SUGG_FISCAL_04_VALUE
+        - category: fiscal
+          value: PVI_SUGG_FISCAL_04_VALUE
           url: PVI_SUGG_FISCAL_04_URL
           condition:
             part1: taxableCapitalGain
             operator: ">"
             part2: 0
-        - value: PVI_SUGG_FISCAL_05_VALUE
+        - category: fiscal
+          value: PVI_SUGG_FISCAL_05_VALUE
           url: PVI_SUGG_FISCAL_05_URL
           condition:
             part1:
@@ -341,41 +412,56 @@ pvi:
               part1: propertyUse
               operator: "=="
               part2: location
-        - value: PVI_SUGG_FISCAL_06_VALUE
+        - category: fiscal
+          value: PVI_SUGG_FISCAL_06_VALUE
           url: PVI_SUGG_FISCAL_06_URL
           condition:
             part1: holdingPeriodYears
             operator: ">"
             part2: 30
-        - value: PVI_SUGG_FISCAL_07_VALUE
+        - category: fiscal
+          value: PVI_SUGG_FISCAL_07_VALUE
           url: PVI_SUGG_FISCAL_07_URL
           condition:
             part1: holdingPeriodYears
             operator: ">"
             part2: 22
-        - value: PVI_SUGG_FISCAL_08_VALUE
+        - category: fiscal
+          value: PVI_SUGG_FISCAL_08_VALUE
           url: PVI_SUGG_FISCAL_08_URL
-        - value: PVI_SUGG_FISCAL_09_VALUE
+        - category: fiscal
+          value: PVI_SUGG_FISCAL_09_VALUE
           url: PVI_SUGG_FISCAL_09_URL
           condition:
             part1: grossCapitalGain
             operator: "<"
             part2: 0
-        - value: PVI_SUGG_FISCAL_10_VALUE
+        - category: fiscal
+          value: PVI_SUGG_FISCAL_10_VALUE
           url: PVI_SUGG_FISCAL_10_URL
-        - value: PVI_SUGG_FISCAL_11_VALUE
+        - category: fiscal
+          value: PVI_SUGG_FISCAL_11_VALUE
           url: PVI_SUGG_FISCAL_11_URL
           condition:
             part1: propertyType
             operator: "=="
             part2: land
-        - value: PVI_SUGG_FISCAL_12_VALUE
+        - category: fiscal
+          value: PVI_SUGG_FISCAL_12_VALUE
           url: PVI_SUGG_FISCAL_12_URL
           condition:
             part1: acquisitionOrigin
             operator: "=="
             part2: gift
-        - value: PVI_SUGG_FISCAL_13_VALUE
+        - category: fiscal
+          value: PVI_SUGG_FISCAL_13_VALUE
           url: PVI_SUGG_FISCAL_13_URL
-        - value: PVI_SUGG_FISCAL_14_VALUE
+        - category: fiscal
+          value: PVI_SUGG_FISCAL_14_VALUE
           url: PVI_SUGG_FISCAL_14_URL
+
+
+
+
+
+
