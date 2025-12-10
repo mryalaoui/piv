@@ -1,96 +1,422 @@
-package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.calculator;
+pvi:
 
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config.PviBusinessProperties;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.config.PviBusinessProperties.SurtaxBracket;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.CapitalGainTaxBracketVO;
-import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
+  # -----------------------------------
+  # 1. SURTAX BRACKETS (texe-pvi.json)
+  # -----------------------------------
+  surtaxBrackets:
+    - min: 0
+      max: 50000
+      pourcentagePlusValue: 0
+      rapport: 0
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
+    - min: 50001
+      max: 60000
+      pourcentagePlusValue: 2
+      rapport: 0.05
 
-@Service
-@RequiredArgsConstructor
-public class CapitalGainTaxCalculator {
+    - min: 60001
+      max: 100000
+      pourcentagePlusValue: 2
+      rapport: 0
 
-    /**
-     * Business configuration loaded from application.yml (pvi.surtaxBrackets).
-     */
-    private final PviBusinessProperties pviBusinessProperties;
+    - min: 100001
+      max: 110000
+      pourcentagePlusValue: 3
+      rapport: 0.1
 
-    /**
-     * Internal representation reused by the existing computation logic.
-     */
-    private final List<CapitalGainTaxBracketVO> brackets = new ArrayList<>();
+    - min: 110001
+      max: 150000
+      pourcentagePlusValue: 3
+      rapport: 0
 
-    @PostConstruct
-    public void loadFromProperties() {
-        brackets.clear();
+    - min: 150001
+      max: 160000
+      pourcentagePlusValue: 4
+      rapport: 0.15
 
-        List<SurtaxBracket> configuredBrackets = pviBusinessProperties.getSurtaxBrackets();
-        if (configuredBrackets == null || configuredBrackets.isEmpty()) {
-            return;
-        }
+    - min: 160001
+      max: 200000
+      pourcentagePlusValue: 4
+      rapport: 0
 
-        for (SurtaxBracket b : configuredBrackets) {
-            if (b.getMin() == null) {
-                continue; // sécurité : on ignore les tranches mal configurées
-            }
+    - min: 200001
+      max: 210000
+      pourcentagePlusValue: 5
+      rapport: 0.2
 
-            BigDecimal min = b.getMin();
-            BigDecimal max = b.getMax(); // peut être null (= pas de plafond)
-            BigDecimal percent = b.getPlusValuePercent() != null
-                    ? b.getPlusValuePercent()
-                    : BigDecimal.ZERO;
-            BigDecimal rapport = b.getRatio() != null
-                    ? b.getRatio()
-                    : BigDecimal.ZERO;
+    - min: 210001
+      max: 250000
+      pourcentagePlusValue: 5
+      rapport: 0
 
-            brackets.add(new CapitalGainTaxBracketVO(min, max, percent, rapport));
-        }
+    - min: 250001
+      max: 260000
+      pourcentagePlusValue: 6
+      rapport: 0.25
 
-        brackets.sort(Comparator.comparing(CapitalGainTaxBracketVO::min));
-    }
+    - min: 260001
+      max:
+      pourcentagePlusValue: 6
+      rapport: 0
 
-    public BigDecimal computeCapitalGainSurtax(BigDecimal plusValueIR) {
-        if (plusValueIR == null || plusValueIR.signum() <= 0) {
-            return BigDecimal.ZERO;
-        }
+  # -----------------------------------
+  # 2. ABATTEMENTS (abattement.json)
+  # -----------------------------------
+  abattements:
+    - year: 0
+      ir:
+        tauxAnnuel: 0
+        tauxAbattementGlobal: 0
+      ps:
+        tauxAnnuel: 0
+        tauxAbattementGlobal: 0
 
-        for (CapitalGainTaxBracketVO b : brackets) {
-            boolean match;
-            if (b.max() != null) {
-                match = plusValueIR.compareTo(b.min()) >= 0
-                        && plusValueIR.compareTo(b.max()) <= 0;
-            } else {
-                match = plusValueIR.compareTo(b.min()) >= 0;
-            }
+    - year: 1
+      ir:
+        tauxAnnuel: 0
+        tauxAbattementGlobal: 0
+      ps:
+        tauxAnnuel: 0
+        tauxAbattementGlobal: 0
 
-            if (match) {
-                return computeBracketTax(b, plusValueIR);
-            }
-        }
-        return BigDecimal.ZERO;
-    }
+    - year: 2
+      ir:
+        tauxAnnuel: 0
+        tauxAbattementGlobal: 0
+      ps:
+        tauxAnnuel: 0
+        tauxAbattementGlobal: 0
 
-    private BigDecimal computeBracketTax(CapitalGainTaxBracketVO b, BigDecimal plusValueIR) {
-        BigDecimal percentTerm = b.pourcentagePlusValue()
-                .divide(new BigDecimal("100"))
-                .multiply(plusValueIR);
+    - year: 3
+      ir:
+        tauxAnnuel: 0
+        tauxAbattementGlobal: 0
+      ps:
+        tauxAnnuel: 0
+        tauxAbattementGlobal: 0
 
-        BigDecimal rapportTerm = BigDecimal.ZERO;
-        if (b.max() != null && b.rapport() != null) {
-            rapportTerm = b.max()
-                    .subtract(plusValueIR)
-                    .multiply(b.rapport());
-        }
+    - year: 4
+      ir:
+        tauxAnnuel: 0
+        tauxAbattementGlobal: 0
+      ps:
+        tauxAnnuel: 0
+        tauxAbattementGlobal: 0
 
-        return percentTerm
-                .subtract(rapportTerm)
-                .setScale(0, RoundingMode.HALF_UP);
-    }
-}
+    - year: 5
+      ir:
+        tauxAnnuel: 0
+        tauxAbattementGlobal: 0
+      ps:
+        tauxAnnuel: 0
+        tauxAbattementGlobal: 0
+
+    - year: 6
+      ir:
+        tauxAnnuel: 6
+        tauxAbattementGlobal: 6
+      ps:
+        tauxAnnuel: 1.65
+        tauxAbattementGlobal: 1.65
+
+    - year: 7
+      ir:
+        tauxAnnuel: 6
+        tauxAbattementGlobal: 12
+      ps:
+        tauxAnnuel: 1.65
+        tauxAbattementGlobal: 3.3
+
+    - year: 8
+      ir:
+        tauxAnnuel: 6
+        tauxAbattementGlobal: 18
+      ps:
+        tauxAnnuel: 1.65
+        tauxAbattementGlobal: 4.95
+
+    - year: 9
+      ir:
+        tauxAnnuel: 6
+        tauxAbattementGlobal: 24
+      ps:
+        tauxAnnuel: 1.65
+        tauxAbattementGlobal: 6.6
+
+    - year: 10
+      ir:
+        tauxAnnuel: 6
+        tauxAbattementGlobal: 30
+      ps:
+        tauxAnnuel: 1.64
+        tauxAbattementGlobal: 8.25
+
+    - year: 11
+      ir:
+        tauxAnnuel: 6
+        tauxAbattementGlobal: 36
+      ps:
+        tauxAnnuel: 1.65
+        tauxAbattementGlobal: 9.9
+
+    - year: 12
+      ir:
+        tauxAnnuel: 6
+        tauxAbattementGlobal: 42
+      ps:
+        tauxAnnuel: 1.65
+        tauxAbattementGlobal: 11.55
+
+    - year: 13
+      ir:
+        tauxAnnuel: 6
+        tauxAbattementGlobal: 48
+      ps:
+        tauxAnnuel: 1.65
+        tauxAbattementGlobal: 13.2
+
+    - year: 14
+      ir:
+        tauxAnnuel: 6
+        tauxAbattementGlobal: 54
+      ps:
+        tauxAnnuel: 1.65
+        tauxAbattementGlobal: 14.85
+
+    - year: 15
+      ir:
+        tauxAnnuel: 6
+        tauxAbattementGlobal: 60
+      ps:
+        tauxAnnuel: 1.65
+        tauxAbattementGlobal: 16.5
+
+    - year: 16
+      ir:
+        tauxAnnuel: 6
+        tauxAbattementGlobal: 66
+      ps:
+        tauxAnnuel: 1.65
+        tauxAbattementGlobal: 18.15
+
+    - year: 17
+      ir:
+        tauxAnnuel: 6
+        tauxAbattementGlobal: 72
+      ps:
+        tauxAnnuel: 1.65
+        tauxAbattementGlobal: 19.8
+
+    - year: 18
+      ir:
+        tauxAnnuel: 6
+        tauxAbattementGlobal: 78
+      ps:
+        tauxAnnuel: 1.65
+        tauxAbattementGlobal: 21.45
+
+    - year: 19
+      ir:
+        tauxAnnuel: 6
+        tauxAbattementGlobal: 84
+      ps:
+        tauxAnnuel: 1.65
+        tauxAbattementGlobal: 23.1
+
+    - year: 20
+      ir:
+        tauxAnnuel: 6
+        tauxAbattementGlobal: 90
+      ps:
+        tauxAnnuel: 1.65
+        tauxAbattementGlobal: 24.75
+
+    - year: 21
+      ir:
+        tauxAnnuel: 6
+        tauxAbattementGlobal: 96
+      ps:
+        tauxAnnuel: 1.65
+        tauxAbattementGlobal: 26.4
+
+    - year: 22
+      ir:
+        tauxAnnuel: 4
+        tauxAbattementGlobal: 100
+      ps:
+        tauxAnnuel: 1.6
+        tauxAbattementGlobal: 28
+
+    - year: 23
+      ir:
+        tauxAnnuel:
+        tauxAbattementGlobal: 100
+      ps:
+        tauxAnnuel: 9
+        tauxAbattementGlobal: 37
+
+    - year: 24
+      ir:
+        tauxAnnuel:
+        tauxAbattementGlobal: 100
+      ps:
+        tauxAnnuel: 9
+        tauxAbattementGlobal: 46
+
+    - year: 25
+      ir:
+        tauxAnnuel:
+        tauxAbattementGlobal: 100
+      ps:
+        tauxAnnuel: 9
+        tauxAbattementGlobal: 55
+
+    - year: 26
+      ir:
+        tauxAnnuel:
+        tauxAbattementGlobal: 100
+      ps:
+        tauxAnnuel: 9
+        tauxAbattementGlobal: 64
+
+    - year: 27
+      ir:
+        tauxAnnuel:
+        tauxAbattementGlobal: 100
+      ps:
+        tauxAnnuel: 9
+        tauxAbattementGlobal: 73
+
+    - year: 28
+      ir:
+        tauxAnnuel:
+        tauxAbattementGlobal: 100
+      ps:
+        tauxAnnuel: 9
+        tauxAbattementGlobal: 82
+
+    - year: 29
+      ir:
+        tauxAnnuel:
+        tauxAbattementGlobal: 100
+      ps:
+        tauxAnnuel: 9
+        tauxAbattementGlobal: 91
+
+    - year: 30
+      ir:
+        tauxAnnuel:
+        tauxAbattementGlobal: 100
+      ps:
+        tauxAnnuel: 9
+        tauxAbattementGlobal: 100
+
+  # -----------------------------------
+  # 3. SUGGESTIONS (codes + conditions)
+  #    (value + url seront gérés au FRONT)
+  # -----------------------------------
+  suggestions:
+    show: 4
+
+    general:
+      - code: GEN_SURTAX_PLURALITY
+        condition:
+          part1: taxableCapitalGain
+          operator: ">"
+          part2: 50000
+
+    financier:
+      - code: FIN_TAX_DUE_AT_SALE
+        condition:
+          part1: impots
+          operator: ">"
+          part2: 0
+
+    juridique:
+      - code: JUR_USUFRUCT_AGREEMENT
+      - code: JUR_MARITAL_HOME_AGREEMENT
+        condition:
+          part1: propertyUse
+          operator: "=="
+          part2: primary-residence
+      - code: JUR_INDIVISION_UNANIMITY
+      - code: JUR_PRIMARY_RESIDENCE_DEMEMBREMENT
+        condition:
+          part1: propertyUse
+          operator: "=="
+          part2: primary-residence
+
+    fiscal:
+      - code: FIS_PRIMARY_OCCUPATION_DELAY
+        condition:
+          part1: propertyUse
+          operator: "=="
+          part2: primary-residence
+
+      - code: FIS_IFI_PLAFONNEMENT
+        condition:
+          part1: grossCapitalGain
+          operator: ">"
+          part2: 0
+
+      - code: FIS_DECLARE_NEXT_YEAR
+        condition:
+          part1: taxableCapitalGain
+          operator: ">"
+          part2: 0
+
+      - code: FIS_HIGH_INCOME_CONTRIBUTION
+        condition:
+          part1: taxableCapitalGain
+          operator: ">"
+          part2: 0
+
+      - code: FIS_FIRST_NON_PRINCIPAL_REINVEST
+        condition:
+          part1:
+            part1: propertyUse
+            operator: "=="
+            part2: secondary-residence
+          operator: "||"
+          part2:
+            part1: propertyUse
+            operator: "=="
+            part2: location
+
+      - code: FIS_HELD_OVER_30_YEARS
+        condition:
+          part1: holdingPeriodYears
+          operator: ">"
+          part2: 30
+
+      - code: FIS_HELD_OVER_22_YEARS_PS_ONLY
+        condition:
+          part1: holdingPeriodYears
+          operator: ">"
+          part2: 22
+
+      - code: FIS_SOCIAL_HOUSING_EXEMPTION
+
+      - code: FIS_NO_OFFSET_LOSSES
+        condition:
+          part1: grossCapitalGain
+          operator: "<"
+          part2: 0
+
+      - code: FIS_NO_COMPENSATION_IMMOBLES
+
+      - code: FIS_LAND_VAT
+        condition:
+          part1: propertyType
+          operator: "=="
+          part2: land
+
+      - code: FIS_GIFT_DUTIES_ADD_TO_PRICE
+        condition:
+          part1: acquisitionOrigin
+          operator: "=="
+          part2: gift
+
+      - code: FIS_SCI_HOLDING_PERIOD_SOCIETY
+
+      - code: FIS_IFI_SIMULATOR
