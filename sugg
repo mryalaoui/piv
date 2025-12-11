@@ -219,4 +219,32 @@ public class SuggestionEngine {
                 BigDecimal right = new BigDecimal(rightRaw);
                 return bd.compareTo(right) == 0;
             } catch (NumberFormatException e) {
-                r
+                return false;
+            }
+        }
+
+        return left.toString().equalsIgnoreCase(rightRaw);
+    }
+
+    private boolean compareGreater(Object left, String rightRaw) {
+        if (!(left instanceof BigDecimal bd)) return false;
+
+        try {
+            BigDecimal right = new BigDecimal(rightRaw);
+            return bd.compareTo(right) > 0;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    private boolean compareLess(Object left, String rightRaw) {
+        if (!(left instanceof BigDecimal bd)) return false;
+
+        try {
+            BigDecimal right = new BigDecimal(rightRaw);
+            return bd.compareTo(right) < 0;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+}
