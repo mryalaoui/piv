@@ -1,98 +1,256 @@
-package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo;
+package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine;
 
-import org.junit.jupiter.api.Test;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.dto.PviSimulationRequest;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.result.PviSimulationResult;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.PviBusinessPropertiesVO;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.SuggestionVO;
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
+import lombok.Setter;
+import org.springframework.stereotype.Service;
 
-import java.util.Map;
+import java.math.BigDecimal;
+import java.security.SecureRandom;
+import java.util.*;
 
-import static org.junit.jupiter.api.Assertions.*;
+@Service
+@RequiredArgsConstructor
+public class SuggestionEngine {
 
-class SuggestionVOTest {
+    private final PviBusinessPropertiesVO pviBusinessProperties;
 
-    @Test
-    void shouldCreateSimpleSuggestionWithoutCondition() {
-        // given
-        String category = "fiscal";
-        String value    = "PVI_SUGG_FISCAL_01_VALUE";
-        String url      = "PVI_SUGG_FISCAL_01_URL";
+    @Setter
+    private int maxSuggestions = 4;
 
-        // when
-        SuggestionVO vo = new SuggestionVO(category, value, url, null);
+    private final List<SuggestionVO> suggestionVOS = new ArrayList<>();
 
-        // then
-        assertEquals(category, vo.category());
-        assertEquals(value, vo.value());
-        assertEquals(url, vo.url());
-        assertNull(vo.condition(), "La condition doit être null quand non renseignée");
+    private final SecureRandom random = new SecureRandom();
+
+    @PostConstruct
+    public void init() {
+        PviBusinessPropertiesVO.SuggestionProperties suggestionProps = pviBusinessProperties.getSuggestion();
+        if (suggestionProps == null) {
+            return;
+        }
+
+        if (suggestionProps.getShow() > 0) {
+            this.maxSuggestions = suggestionProps.getShow();
+        }
+
+        Map<String, List<SuggestionVO>> suggestionsByCategory = suggestionProps.getSuggestions();
+        if (suggestionsByCategory == null || suggestionsByCategory.isEmpty()) {
+            return;
+        }
+
+        suggestionsByCategory.forEach((categoryKey, list) -> {
+            if (list == null) {
+                return;
+            }
+            for (SuggestionVO s : list) {
+                SuggestionVO normalized = s;
+                if (s.category() == null || s.category().isBlank()) {
+                    // NOTE: ici ton SuggestionVO a un constructeur (category, value, condition)
+                    normalized = new SuggestionVO(categoryKey, s.value(), s.condition());
+                }
+                suggestionVOS.add(normalized);
+            }
+        });
     }
 
-    @Test
-    void shouldCreateSuggestionWithSimpleCondition() {
-        // given
-        Map<String, Object> condition = Map.of(
-                "part1", "taxableCapitalGain",
-                "operator", ">",
-                "part2", "50000"
-        );
+    // -------------------------------------------------------------------------
+    // MÉTHODE POINT D'ENTRÉE (même signature, même nom, même comportement)
+    // -------------------------------------------------------------------------
+    public List<SuggestionVO> computeSuggestions(PviSimulationRequest req, PviSimulationResult result) {
+        if (maxSuggestions <= 0 || suggestionVOS.isEmpty()) {
+            return List.of();
+        }
 
-        // when
-        SuggestionVO vo = new SuggestionVO(
-                "fiscal",
-                "PVI_SUGG_FISCAL_SURTAXE_VALUE",
-                "PVI_SUGG_FISCAL_SURTAXE_URL",
-                condition
-        );
+        Map<String, List<SuggestionVO>> eligibleByCategory =
+                groupEligibleSuggestionsByCategory(req, result);
 
-        // then
-        assertNotNull(vo.condition());
-        assertEquals("taxableCapitalGain", vo.condition().get("part1"));
-        assertEquals(">", vo.condition().get("operator"));
-        assertEquals("50000", vo.condition().get("part2"));
+        if (eligibleByCategory.isEmpty()) {
+            return List.of();
+        }
+
+        List<SuggestionVO> selected = new ArrayList<>();
+        List<SuggestionVO> leftovers = new ArrayList<>();
+
+        selectOnePerCategory(eligibleByCategory, selected, leftovers);
+        fillFromLeftovers(selected, leftovers);
+
+        return selected;
     }
 
-    @Test
+    // -------------------------------------------------------------------------
+    // MÉTHODES PRIVÉES EXTRACTÉES POUR RÉDUIRE LA COMPLEXITÉ
+    // -------------------------------------------------------------------------
+
+    /**
+     * Regroupe les suggestions éligibles par catégorie.
+     */
+    private Map<String, List<SuggestionVO>> groupEligibleSuggestionsByCategory(
+            PviSimulationRequest req,
+            PviSimulationResult result
+    ) {
+        Map<String, List<SuggestionVO>> eligibleByCategory = new LinkedHashMap<>();
+
+        for (SuggestionVO s : suggestionVOS) {
+            if (s.condition() == null || evalCondition(s.condition(), req, result)) {
+                eligibleByCategory
+                        .computeIfAbsent(s.category(), k -> new ArrayList<>())
+                        .add(s);
+            }
+        }
+
+        return eligibleByCategory;
+    }
+
+    /**
+     * Sélectionne au plus une suggestion par catégorie (tirage aléatoire)
+     * et met les suggestions restantes dans leftovers.
+     */
+    private void selectOnePerCategory(
+            Map<String, List<SuggestionVO>> eligibleByCategory,
+            List<SuggestionVO> selected,
+            List<SuggestionVO> leftovers
+    ) {
+        for (List<SuggestionVO> perCategory : eligibleByCategory.values()) {
+            if (perCategory.isEmpty()) {
+                continue;
+            }
+
+            int idx = random.nextInt(perCategory.size());
+            SuggestionVO picked = perCategory.get(idx);
+            selected.add(picked);
+
+            for (int i = 0; i < perCategory.size(); i++) {
+                if (i != idx) {
+                    leftovers.add(perCategory.get(i));
+                }
+            }
+        }
+    }
+
+    /**
+     * Complète la liste sélectionnée avec les suggestions restantes (leftovers)
+     * jusqu'à atteindre maxSuggestions, en tirant au hasard.
+     */
+    private void fillFromLeftovers(List<SuggestionVO> selected, List<SuggestionVO> leftovers) {
+        while (selected.size() < maxSuggestions && !leftovers.isEmpty()) {
+            int idx = random.nextInt(leftovers.size());
+            selected.add(leftovers.remove(idx));
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // RESTE DU CODE INCHANGÉ
+    // -------------------------------------------------------------------------
+
     @SuppressWarnings("unchecked")
-    void shouldSupportCompositeConditionTree() {
-        // given : (propertyUse == 'secondary-residence' || propertyUse == 'location')
+    private boolean evalCondition(Map<String, Object> node, PviSimulationRequest req, PviSimulationResult result) {
+        if (node == null || node.isEmpty()) {
+            return true;
+        }
 
-        Map<String, Object> leftCond = Map.of(
-                "part1", "propertyUse",
-                "operator", "==",
-                "part2", "secondary-residence"
-        );
+        Object part1Obj = node.get("part1");
+        Object opObj = node.get("operator");
+        Object part2Obj = node.get("part2");
 
-        Map<String, Object> rightCond = Map.of(
-                "part1", "propertyUse",
-                "operator", "==",
-                "part2", "location"
-        );
+        if (part1Obj == null || opObj == null || part2Obj == null) {
+            return true;
+        }
 
-        Map<String, Object> rootCondition = Map.of(
-                "part1", leftCond,
-                "operator", "||",
-                "part2", rightCond
-        );
+        String op = String.valueOf(opObj);
 
-        // when
-        SuggestionVO vo = new SuggestionVO(
-                "fiscal",
-                "PVI_SUGG_FISCAL_FIRST_DISPOSAL_VALUE",
-                "PVI_SUGG_FISCAL_FIRST_DISPOSAL_URL",
-                rootCondition
-        );
+        if (part1Obj instanceof Map<?, ?> leftMap
+                && ((Map<?, ?>) leftMap).containsKey("part1")
+                && ((Map<?, ?>) leftMap).containsKey("operator")) {
 
-        // then
-        assertNotNull(vo.condition());
-        assertEquals("||", vo.condition().get("operator"));
+            Map<String, Object> leftCond = (Map<String, Object>) leftMap;
+            Map<String, Object> rightCond = (Map<String, Object>) part2Obj;
 
-        Map<String, Object> part1 = (Map<String, Object>) vo.condition().get("part1");
-        Map<String, Object> part2 = (Map<String, Object>) vo.condition().get("part2");
+            boolean left = evalCondition(leftCond, req, result);
+            boolean right = evalCondition(rightCond, req, result);
 
-        assertEquals("propertyUse", part1.get("part1"));
-        assertEquals("==", part1.get("operator"));
-        assertEquals("secondary-residence", part1.get("part2"));
+            return switch (op) {
+                case "||" -> left || right;
+                case "&&" -> left && right;
+                default -> false;
+            };
+        }
 
-        assertEquals("propertyUse", part2.get("part1"));
-        assertEquals("==", part2.get("operator"));
-        assertEquals("location", part2.get("part2"));
+        String varName = String.valueOf(part1Obj);
+        Object leftValue = resolveVariable(varName, req, result);
+        String rightRaw = String.valueOf(part2Obj);
+
+        return switch (op) {
+            case "==" -> compareEquals(leftValue, rightRaw);
+            case ">" -> compareGreater(leftValue, rightRaw);
+            case "<" -> compareLess(leftValue, rightRaw);
+            default -> false;
+        };
+    }
+
+    private Object resolveVariable(String name, PviSimulationRequest req, PviSimulationResult result) {
+        return switch (name) {
+            case "grossCapitalGain"   -> result.getGrossCapitalGain();
+            case "taxableCapitalGain" -> result.getTaxableCapitalGain();
+            case "impots"             -> result.getTotalTaxes();
+            case "holdingPeriodYears" -> BigDecimal.valueOf(result.getHoldingPeriodYears());
+
+            case "propertyUse" -> req.propertyUse() == null
+                    ? null
+                    : req.propertyUse().name().toLowerCase().replace('_', '-');
+
+            case "propertyType" -> req.propertyType() == null
+                    ? null
+                    : req.propertyType().name().toLowerCase();
+
+            case "acquisitionOrigin" -> req.acquisitionOrigin() == null
+                    ? null
+                    : req.acquisitionOrigin().name().toLowerCase();
+
+            default -> null;
+        };
+    }
+
+    private boolean compareEquals(Object left, String rightRaw) {
+        if (left == null) return false;
+
+        if (left instanceof BigDecimal bd) {
+            try {
+                BigDecimal right = new BigDecimal(rightRaw);
+                return bd.compareTo(right) == 0;
+            } catch (NumberFormatException e) {
+                return false;
+            }
+        }
+
+        String leftStr = left.toString();
+        return leftStr.equalsIgnoreCase(rightRaw);
+    }
+
+    private boolean compareGreater(Object left, String rightRaw) {
+        if (!(left instanceof BigDecimal bd)) {
+            return false;
+        }
+        try {
+            BigDecimal right = new BigDecimal(rightRaw);
+            return bd.compareTo(right) > 0;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    private boolean compareLess(Object left, String rightRaw) {
+        if (!(left instanceof BigDecimal bd)) {
+            return false;
+        }
+        try {
+            BigDecimal right = new BigDecimal(rightRaw);
+            return bd.compareTo(new BigDecimal(rightRaw)) < 0;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 }
