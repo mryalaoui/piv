@@ -4,247 +4,185 @@ import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.dto.PviSimulationRequ
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.result.PviSimulationResult;
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.PviBusinessPropertiesVO;
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.SuggestionVO;
-import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
-import lombok.Setter;
-import org.springframework.stereotype.Service;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
 
 import java.math.BigDecimal;
-import java.security.SecureRandom;
 import java.util.*;
 
-@Service
-@RequiredArgsConstructor
-public class SuggestionEngine {
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.when;
 
-    private final PviBusinessPropertiesVO pviBusinessProperties;
+class SuggestionEngineTest {
 
-    @Setter
-    private int maxSuggestions = 4;
+    @Mock
+    private PviBusinessPropertiesVO mockProps;
 
-    private final List<SuggestionVO> suggestionVOS = new ArrayList<>();
+    @Mock
+    private PviSimulationRequest req;
 
-    private final SecureRandom random = new SecureRandom();
+    @Mock
+    private PviSimulationResult result;
+
+    private SuggestionEngine engine;
+
+    @BeforeEach
+    void setup() {
+        MockitoAnnotations.openMocks(this);
+
+        // ----------------------------
+        // 1️⃣ Construire les données YAML en Java
+        // ----------------------------
+        PviBusinessPropertiesVO.SuggestionProperties props = new PviBusinessPropertiesVO.SuggestionProperties();
+        props.setShow(4);
+
+        Map<String, List<SuggestionVO>> map = new LinkedHashMap<>();
+
+        // GENERAL ------------------------------------
+        map.put("general", List.of(
+                new SuggestionVO("general", "PVI_SUGG_GENERAL_01",
+                        Map.of("part1", "taxableCapitalGain",
+                               "operator", ">",
+                               "part2", "50000"))
+        ));
+
+        // FINANCIER ----------------------------------
+        map.put("financier", List.of(
+                new SuggestionVO("financier", "PVI_SUGG_FINANCIER_01",
+                        Map.of("part1", "impots",
+                               "operator", ">",
+                               "part2", "0"))
+        ));
+
+        // JURIDIQUE -----------------------------------
+        map.put("juridique", List.of(
+                new SuggestionVO("juridique", "PVI_SUGG_JURIDIQUE_01",
+                        Map.of("part1", "propertyUse",
+                               "operator", "==",
+                               "part2", "primary-residence")),
+
+                new SuggestionVO("juridique", "PVI_SUGG_JURIDIQUE_02", null),
+                new SuggestionVO("juridique", "PVI_SUGG_JURIDIQUE_03", null),
+
+                new SuggestionVO("juridique", "PVI_SUGG_JURIDIQUE_04",
+                        Map.of("part1", "propertyUse",
+                               "operator", "==",
+                               "part2", "primary-residence"))
+        ));
+
+        // FISCAL --------------------------------------
+        map.put("fiscal", List.of(
+                new SuggestionVO("fiscal", "PVI_SUGG_FISCAL_01",
+                        Map.of("part1", "propertyUse",
+                               "operator", "==",
+                               "part2", "primary-residence")),
+
+                new SuggestionVO("fiscal", "PVI_SUGG_FISCAL_02",
+                        Map.of("part1", "grossCapitalGain",
+                               "operator", ">",
+                               "part2", "0")),
+
+                new SuggestionVO("fiscal", "PVI_SUGG_FISCAL_03",
+                        Map.of("part1", "taxableCapitalGain",
+                               "operator", ">",
+                               "part2", "0")),
+
+                new SuggestionVO("fiscal", "PVI_SUGG_FISCAL_04",
+                        Map.of("part1", "taxableCapitalGain",
+                               "operator", ">",
+                               "part2", "0")),
+
+                // OR condition
+                new SuggestionVO("fiscal", "PVI_SUGG_FISCAL_05",
+                        Map.of(
+                                "part1", Map.of("part1", "propertyUse", "operator", "==", "part2", "secondary-residence"),
+                                "operator", "||",
+                                "part2", Map.of("part1", "propertyUse", "operator", "==", "part2", "location")
+                        )),
+
+                new SuggestionVO("fiscal", "PVI_SUGG_FISCAL_06",
+                        Map.of("part1", "holdingPeriodYears", "operator", ">", "part2", "30")),
+
+                new SuggestionVO("fiscal", "PVI_SUGG_FISCAL_07",
+                        Map.of("part1", "holdingPeriodYears", "operator", ">", "part2", "22")),
+
+                new SuggestionVO("fiscal", "PVI_SUGG_FISCAL_08", null),
+                new SuggestionVO("fiscal", "PVI_SUGG_FISCAL_09",
+                        Map.of("part1", "grossCapitalGain", "operator", "<", "part2", "0")),
+
+                new SuggestionVO("fiscal", "PVI_SUGG_FISCAL_10", null),
+
+                new SuggestionVO("fiscal", "PVI_SUGG_FISCAL_11",
+                        Map.of("part1", "propertyType", "operator", "==", "part2", "land")),
+
+                new SuggestionVO("fiscal", "PVI_SUGG_FISCAL_12",
+                        Map.of("part1", "acquisitionOrigin", "operator", "==", "part2", "gift")),
+
+                new SuggestionVO("fiscal", "PVI_SUGG_FISCAL_13", null),
+                new SuggestionVO("fiscal", "PVI_SUGG_FISCAL_14", null)
+        ));
+
+        props.setSuggestions(map);
+
+        // ----------------------------
+        // 2️⃣ Mock : simuler Spring Boot
+        // ----------------------------
+        when(mockProps.getSuggestion()).thenReturn(props);
+
+        // ----------------------------
+        // 3️⃣ Créer le moteur
+        // ----------------------------
+        engine = new SuggestionEngine(mockProps);
+        engine.init(); // important !
+    }
 
     // -------------------------------------------------------------------------
-    // INITIALISATION
+    // 🔥 TEST 1 : Cas où toutes les conditions matchent
     // -------------------------------------------------------------------------
-    @PostConstruct
-    public void init() {
-        PviBusinessPropertiesVO.SuggestionProperties suggestionProps = pviBusinessProperties.getSuggestion();
-        if (suggestionProps == null) {
-            return;
-        }
+    @Test
+    void shouldReturnMaxSuggestions() {
+        when(result.getTaxableCapitalGain()).thenReturn(new BigDecimal("100000"));
+        when(result.getGrossCapitalGain()).thenReturn(new BigDecimal("200000"));
+        when(result.getTotalTaxes()).thenReturn(new BigDecimal("5000"));
+        when(result.getHoldingPeriodYears()).thenReturn(40);
 
-        if (suggestionProps.getShow() > 0) {
-            this.maxSuggestions = suggestionProps.getShow();
-        }
+        when(req.propertyUse()).thenReturn(() -> "primary-residence");
+        when(req.propertyType()).thenReturn(() -> "land");
+        when(req.acquisitionOrigin()).thenReturn(() -> "gift");
 
-        Map<String, List<SuggestionVO>> suggestionsByCategory = suggestionProps.getSuggestions();
-        if (suggestionsByCategory == null || suggestionsByCategory.isEmpty()) {
-            return;
-        }
+        List<SuggestionVO> resultList = engine.computeSuggestions(req, result);
 
-        suggestionsByCategory.forEach((categoryKey, list) -> {
-            if (list == null) return;
+        assertNotNull(resultList);
+        assertTrue(resultList.size() <= 4);
+    }
 
-            for (SuggestionVO s : list) {
-                SuggestionVO normalized = s;
-                if (s.category() == null || s.category().isBlank()) {
-                    normalized = new SuggestionVO(categoryKey, s.value(), s.condition());
-                }
-                suggestionVOS.add(normalized);
+    // -------------------------------------------------------------------------
+    // 🔥 TEST 2 : Cas où aucune condition ne matche
+    // -------------------------------------------------------------------------
+    @Test
+    void shouldReturnOnlyUnconditionalWhenNoConditionsMatch() {
+        when(result.getTaxableCapitalGain()).thenReturn(BigDecimal.ZERO);
+        when(result.getGrossCapitalGain()).thenReturn(BigDecimal.ZERO);
+        when(result.getTotalTaxes()).thenReturn(BigDecimal.ZERO);
+        when(result.getHoldingPeriodYears()).thenReturn(0);
+
+        when(req.propertyUse()).thenReturn(() -> null);
+        when(req.propertyType()).thenReturn(() -> null);
+        when(req.acquisitionOrigin()).thenReturn(() -> null);
+
+        List<SuggestionVO> resultList = engine.computeSuggestions(req, result);
+
+        assertNotNull(resultList);
+        assertFalse(resultList.isEmpty());
+        assertTrue(resultList.size() <= 4);
+
+        // vérifier qu'on ne récupère QUE des suggestions sans conditions
+        for (SuggestionVO s : resultList) {
+            if (s.condition() != null) {
+                fail("La suggestion " + s.value() + " a une condition mais ne devrait pas apparaître.");
             }
-        });
-    }
-
-    // -------------------------------------------------------------------------
-    // MÉTHODE PRINCIPALE : computeSuggestions (complexité réduite)
-    // -------------------------------------------------------------------------
-    public List<SuggestionVO> computeSuggestions(PviSimulationRequest req, PviSimulationResult result) {
-        if (maxSuggestions <= 0 || suggestionVOS.isEmpty()) {
-            return List.of();
-        }
-
-        Map<String, List<SuggestionVO>> eligibleByCategory =
-                groupEligibleSuggestionsByCategory(req, result);
-
-        if (eligibleByCategory.isEmpty()) {
-            return List.of();
-        }
-
-        List<SuggestionVO> selected = new ArrayList<>();
-        List<SuggestionVO> leftovers = new ArrayList<>();
-
-        selectOnePerCategory(eligibleByCategory, selected, leftovers);
-        fillFromLeftovers(selected, leftovers);
-
-        return selected;
-    }
-
-    // -------------------------------------------------------------------------
-    // EXTRACTIONS POUR BAISSER LA COMPLEXITÉ
-    // -------------------------------------------------------------------------
-
-    private Map<String, List<SuggestionVO>> groupEligibleSuggestionsByCategory(
-            PviSimulationRequest req,
-            PviSimulationResult result
-    ) {
-        Map<String, List<SuggestionVO>> eligibleByCategory = new LinkedHashMap<>();
-
-        for (SuggestionVO s : suggestionVOS) {
-            if (s.condition() == null || evalCondition(s.condition(), req, result)) {
-                eligibleByCategory
-                        .computeIfAbsent(s.category(), k -> new ArrayList<>())
-                        .add(s);
-            }
-        }
-
-        return eligibleByCategory;
-    }
-
-    private void selectOnePerCategory(
-            Map<String, List<SuggestionVO>> eligibleByCategory,
-            List<SuggestionVO> selected,
-            List<SuggestionVO> leftovers
-    ) {
-        for (List<SuggestionVO> perCategory : eligibleByCategory.values()) {
-            if (perCategory.isEmpty()) continue;
-
-            int idx = random.nextInt(perCategory.size());
-            SuggestionVO picked = perCategory.get(idx);
-            selected.add(picked);
-
-            for (int i = 0; i < perCategory.size(); i++) {
-                if (i != idx) leftovers.add(perCategory.get(i));
-            }
-        }
-    }
-
-    private void fillFromLeftovers(List<SuggestionVO> selected, List<SuggestionVO> leftovers) {
-        while (selected.size() < maxSuggestions && !leftovers.isEmpty()) {
-            int idx = random.nextInt(leftovers.size());
-            selected.add(leftovers.remove(idx));
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // MOTEUR DE CONDITIONS
-    // -------------------------------------------------------------------------
-    @SuppressWarnings("unchecked")
-    private boolean evalCondition(Map<String, Object> node,
-                                  PviSimulationRequest req,
-                                  PviSimulationResult result) {
-
-        if (node == null || node.isEmpty()) return true;
-
-        Object part1Obj = node.get("part1");
-        Object opObj    = node.get("operator");
-        Object part2Obj = node.get("part2");
-
-        if (part1Obj == null || opObj == null || part2Obj == null) {
-            return true;
-        }
-
-        String op = String.valueOf(opObj);
-
-        // Conditions composées (OR / AND)
-        if (part1Obj instanceof Map<?, ?> leftMap
-                && ((Map<?, ?>) leftMap).containsKey("part1")
-                && ((Map<?, ?>) leftMap).containsKey("operator")) {
-
-            Map<String, Object> leftCond  = (Map<String, Object>) leftMap;
-            Map<String, Object> rightCond = (Map<String, Object>) part2Obj;
-
-            boolean left  = evalCondition(leftCond, req, result);
-            boolean right = evalCondition(rightCond, req, result);
-
-            return switch (op) {
-                case "||" -> left || right;
-                case "&&" -> left && right;
-                default   -> false;
-            };
-        }
-
-        // Conditions simples
-        String varName   = String.valueOf(part1Obj);
-        Object leftValue = resolveVariable(varName, req, result);
-        String rightRaw  = String.valueOf(part2Obj);
-
-        return switch (op) {
-            case "==" -> compareEquals(leftValue, rightRaw);
-            case ">"  -> compareGreater(leftValue, rightRaw);
-            case "<"  -> compareLess(leftValue, rightRaw);
-            default   -> false;
-        };
-    }
-
-    // -------------------------------------------------------------------------
-    // RÉSOLUTIONS DE VARIABLES (mappage YAML → Java)
-    // -------------------------------------------------------------------------
-    private Object resolveVariable(String name,
-                                   PviSimulationRequest req,
-                                   PviSimulationResult result) {
-
-        return switch (name) {
-            case "grossCapitalGain"   -> result.getGrossCapitalGain();
-            case "taxableCapitalGain" -> result.getTaxableCapitalGain();
-            case "impots"             -> result.getTotalTaxes();
-            case "holdingPeriodYears" -> BigDecimal.valueOf(result.getHoldingPeriodYears());
-
-            case "propertyUse" -> req.propertyUse() == null
-                    ? null
-                    : req.propertyUse().name().toLowerCase().replace('_', '-');
-
-            case "propertyType" -> req.propertyType() == null
-                    ? null
-                    : req.propertyType().name().toLowerCase();
-
-            case "acquisitionOrigin" -> req.acquisitionOrigin() == null
-                    ? null
-                    : req.acquisitionOrigin().name().toLowerCase();
-
-            default -> null;
-        };
-    }
-
-    // -------------------------------------------------------------------------
-    // COMPARAISONS
-    // -------------------------------------------------------------------------
-    private boolean compareEquals(Object left, String rightRaw) {
-        if (left == null) return false;
-
-        if (left instanceof BigDecimal bd) {
-            try {
-                BigDecimal right = new BigDecimal(rightRaw);
-                return bd.compareTo(right) == 0;
-            } catch (NumberFormatException e) {
-                return false;
-            }
-        }
-
-        return left.toString().equalsIgnoreCase(rightRaw);
-    }
-
-    private boolean compareGreater(Object left, String rightRaw) {
-        if (!(left instanceof BigDecimal bd)) return false;
-
-        try {
-            BigDecimal right = new BigDecimal(rightRaw);
-            return bd.compareTo(right) > 0;
-        } catch (NumberFormatException e) {
-            return false;
-        }
-    }
-
-    private boolean compareLess(Object left, String rightRaw) {
-        if (!(left instanceof BigDecimal bd)) return false;
-
-        try {
-            BigDecimal right = new BigDecimal(rightRaw);
-            return bd.compareTo(right) < 0;
-        } catch (NumberFormatException e) {
-            return false;
         }
     }
 }
