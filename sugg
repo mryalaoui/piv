@@ -26,6 +26,9 @@ public class SuggestionEngine {
 
     private final SecureRandom random = new SecureRandom();
 
+    // -------------------------------------------------------------------------
+    // INITIALISATION
+    // -------------------------------------------------------------------------
     @PostConstruct
     public void init() {
         PviBusinessPropertiesVO.SuggestionProperties suggestionProps = pviBusinessProperties.getSuggestion();
@@ -43,13 +46,11 @@ public class SuggestionEngine {
         }
 
         suggestionsByCategory.forEach((categoryKey, list) -> {
-            if (list == null) {
-                return;
-            }
+            if (list == null) return;
+
             for (SuggestionVO s : list) {
                 SuggestionVO normalized = s;
                 if (s.category() == null || s.category().isBlank()) {
-                    // NOTE: ici ton SuggestionVO a un constructeur (category, value, condition)
                     normalized = new SuggestionVO(categoryKey, s.value(), s.condition());
                 }
                 suggestionVOS.add(normalized);
@@ -58,7 +59,7 @@ public class SuggestionEngine {
     }
 
     // -------------------------------------------------------------------------
-    // MÉTHODE POINT D'ENTRÉE (même signature, même nom, même comportement)
+    // MÉTHODE PRINCIPALE : computeSuggestions (complexité réduite)
     // -------------------------------------------------------------------------
     public List<SuggestionVO> computeSuggestions(PviSimulationRequest req, PviSimulationResult result) {
         if (maxSuggestions <= 0 || suggestionVOS.isEmpty()) {
@@ -82,12 +83,9 @@ public class SuggestionEngine {
     }
 
     // -------------------------------------------------------------------------
-    // MÉTHODES PRIVÉES EXTRACTÉES POUR RÉDUIRE LA COMPLEXITÉ
+    // EXTRACTIONS POUR BAISSER LA COMPLEXITÉ
     // -------------------------------------------------------------------------
 
-    /**
-     * Regroupe les suggestions éligibles par catégorie.
-     */
     private Map<String, List<SuggestionVO>> groupEligibleSuggestionsByCategory(
             PviSimulationRequest req,
             PviSimulationResult result
@@ -105,36 +103,24 @@ public class SuggestionEngine {
         return eligibleByCategory;
     }
 
-    /**
-     * Sélectionne au plus une suggestion par catégorie (tirage aléatoire)
-     * et met les suggestions restantes dans leftovers.
-     */
     private void selectOnePerCategory(
             Map<String, List<SuggestionVO>> eligibleByCategory,
             List<SuggestionVO> selected,
             List<SuggestionVO> leftovers
     ) {
         for (List<SuggestionVO> perCategory : eligibleByCategory.values()) {
-            if (perCategory.isEmpty()) {
-                continue;
-            }
+            if (perCategory.isEmpty()) continue;
 
             int idx = random.nextInt(perCategory.size());
             SuggestionVO picked = perCategory.get(idx);
             selected.add(picked);
 
             for (int i = 0; i < perCategory.size(); i++) {
-                if (i != idx) {
-                    leftovers.add(perCategory.get(i));
-                }
+                if (i != idx) leftovers.add(perCategory.get(i));
             }
         }
     }
 
-    /**
-     * Complète la liste sélectionnée avec les suggestions restantes (leftovers)
-     * jusqu'à atteindre maxSuggestions, en tirant au hasard.
-     */
     private void fillFromLeftovers(List<SuggestionVO> selected, List<SuggestionVO> leftovers) {
         while (selected.size() < maxSuggestions && !leftovers.isEmpty()) {
             int idx = random.nextInt(leftovers.size());
@@ -143,17 +129,17 @@ public class SuggestionEngine {
     }
 
     // -------------------------------------------------------------------------
-    // RESTE DU CODE INCHANGÉ
+    // MOTEUR DE CONDITIONS
     // -------------------------------------------------------------------------
-
     @SuppressWarnings("unchecked")
-    private boolean evalCondition(Map<String, Object> node, PviSimulationRequest req, PviSimulationResult result) {
-        if (node == null || node.isEmpty()) {
-            return true;
-        }
+    private boolean evalCondition(Map<String, Object> node,
+                                  PviSimulationRequest req,
+                                  PviSimulationResult result) {
+
+        if (node == null || node.isEmpty()) return true;
 
         Object part1Obj = node.get("part1");
-        Object opObj = node.get("operator");
+        Object opObj    = node.get("operator");
         Object part2Obj = node.get("part2");
 
         if (part1Obj == null || opObj == null || part2Obj == null) {
@@ -162,36 +148,44 @@ public class SuggestionEngine {
 
         String op = String.valueOf(opObj);
 
+        // Conditions composées (OR / AND)
         if (part1Obj instanceof Map<?, ?> leftMap
                 && ((Map<?, ?>) leftMap).containsKey("part1")
                 && ((Map<?, ?>) leftMap).containsKey("operator")) {
 
-            Map<String, Object> leftCond = (Map<String, Object>) leftMap;
+            Map<String, Object> leftCond  = (Map<String, Object>) leftMap;
             Map<String, Object> rightCond = (Map<String, Object>) part2Obj;
 
-            boolean left = evalCondition(leftCond, req, result);
+            boolean left  = evalCondition(leftCond, req, result);
             boolean right = evalCondition(rightCond, req, result);
 
             return switch (op) {
                 case "||" -> left || right;
                 case "&&" -> left && right;
-                default -> false;
+                default   -> false;
             };
         }
 
-        String varName = String.valueOf(part1Obj);
+        // Conditions simples
+        String varName   = String.valueOf(part1Obj);
         Object leftValue = resolveVariable(varName, req, result);
-        String rightRaw = String.valueOf(part2Obj);
+        String rightRaw  = String.valueOf(part2Obj);
 
         return switch (op) {
             case "==" -> compareEquals(leftValue, rightRaw);
-            case ">" -> compareGreater(leftValue, rightRaw);
-            case "<" -> compareLess(leftValue, rightRaw);
-            default -> false;
+            case ">"  -> compareGreater(leftValue, rightRaw);
+            case "<"  -> compareLess(leftValue, rightRaw);
+            default   -> false;
         };
     }
 
-    private Object resolveVariable(String name, PviSimulationRequest req, PviSimulationResult result) {
+    // -------------------------------------------------------------------------
+    // RÉSOLUTIONS DE VARIABLES (mappage YAML → Java)
+    // -------------------------------------------------------------------------
+    private Object resolveVariable(String name,
+                                   PviSimulationRequest req,
+                                   PviSimulationResult result) {
+
         return switch (name) {
             case "grossCapitalGain"   -> result.getGrossCapitalGain();
             case "taxableCapitalGain" -> result.getTaxableCapitalGain();
@@ -214,6 +208,9 @@ public class SuggestionEngine {
         };
     }
 
+    // -------------------------------------------------------------------------
+    // COMPARAISONS
+    // -------------------------------------------------------------------------
     private boolean compareEquals(Object left, String rightRaw) {
         if (left == null) return false;
 
@@ -222,35 +219,4 @@ public class SuggestionEngine {
                 BigDecimal right = new BigDecimal(rightRaw);
                 return bd.compareTo(right) == 0;
             } catch (NumberFormatException e) {
-                return false;
-            }
-        }
-
-        String leftStr = left.toString();
-        return leftStr.equalsIgnoreCase(rightRaw);
-    }
-
-    private boolean compareGreater(Object left, String rightRaw) {
-        if (!(left instanceof BigDecimal bd)) {
-            return false;
-        }
-        try {
-            BigDecimal right = new BigDecimal(rightRaw);
-            return bd.compareTo(right) > 0;
-        } catch (NumberFormatException e) {
-            return false;
-        }
-    }
-
-    private boolean compareLess(Object left, String rightRaw) {
-        if (!(left instanceof BigDecimal bd)) {
-            return false;
-        }
-        try {
-            BigDecimal right = new BigDecimal(rightRaw);
-            return bd.compareTo(new BigDecimal(rightRaw)) < 0;
-        } catch (NumberFormatException e) {
-            return false;
-        }
-    }
-}
+                r
