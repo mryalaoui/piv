@@ -1,263 +1,141 @@
-package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine;
-
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.dto.PviSimulationRequest;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.result.PviSimulationResult;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.PviBusinessPropertiesVO;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.SuggestionVO;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+package com.bnpparibas.dsibddf.simulator.common.suggestion;
 
 import java.math.BigDecimal;
+import java.security.SecureRandom;
 import java.util.*;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.when;
+public class GenericSuggestionEngine<C> {
 
-class SuggestionEngineTest {
+    private final List<SuggestionItem> suggestions;
+    private final SuggestionContextResolver<C> resolver;
+    private final int maxSuggestions;
+    private final SecureRandom random = new SecureRandom();
 
-    @Mock
-    private PviBusinessPropertiesVO mockProps;
-
-    @Mock
-    private PviSimulationRequest req;
-
-    @Mock
-    private PviSimulationResult result;
-
-    private SuggestionEngine engine;
-
-    @BeforeEach
-    void setup() {
-        MockitoAnnotations.openMocks(this);
-
-        // ----------------------------
-        // 1️⃣ Construire les données "YAML" en Java
-        // ----------------------------
-        PviBusinessPropertiesVO.SuggestionProperties props = new PviBusinessPropertiesVO.SuggestionProperties();
-        props.setShow(4); // équivalent à "show: 4" dans le YAML
-
-        Map<String, List<SuggestionVO>> map = new LinkedHashMap<>();
-
-        // ----- general -----
-        map.put("general", List.of(
-                new SuggestionVO(
-                        "general",
-                        "PVI_SUGG_GENERAL_01",
-                        Map.of(
-                                "part1", "taxableCapitalGain",
-                                "operator", ">",
-                                "part2", "50000"
-                        )
-                )
-        ));
-
-        // ----- financier -----
-        map.put("financier", List.of(
-                new SuggestionVO(
-                        "financier",
-                        "PVI_SUGG_FINANCIER_01",
-                        Map.of(
-                                "part1", "impots",
-                                "operator", ">",
-                                "part2", "0"
-                        )
-                )
-        ));
-
-        // ----- juridique -----
-        map.put("juridique", List.of(
-                new SuggestionVO(
-                        "juridique",
-                        "PVI_SUGG_JURIDIQUE_01",
-                        Map.of(
-                                "part1", "propertyUse",
-                                "operator", "==",
-                                "part2", "primary-residence"
-                        )
-                ),
-                new SuggestionVO("juridique", "PVI_SUGG_JURIDIQUE_02", null),
-                new SuggestionVO("juridique", "PVI_SUGG_JURIDIQUE_03", null),
-                new SuggestionVO(
-                        "juridique",
-                        "PVI_SUGG_JURIDIQUE_04",
-                        Map.of(
-                                "part1", "propertyUse",
-                                "operator", "==",
-                                "part2", "primary-residence"
-                        )
-                )
-        ));
-
-        // ----- fiscal -----
-        map.put("fiscal", List.of(
-                new SuggestionVO(
-                        "fiscal",
-                        "PVI_SUGG_FISCAL_01",
-                        Map.of(
-                                "part1", "propertyUse",
-                                "operator", "==",
-                                "part2", "primary-residence"
-                        )
-                ),
-                new SuggestionVO(
-                        "fiscal",
-                        "PVI_SUGG_FISCAL_02",
-                        Map.of(
-                                "part1", "grossCapitalGain",
-                                "operator", ">",
-                                "part2", "0"
-                        )
-                ),
-                new SuggestionVO(
-                        "fiscal",
-                        "PVI_SUGG_FISCAL_03",
-                        Map.of(
-                                "part1", "taxableCapitalGain",
-                                "operator", ">",
-                                "part2", "0"
-                        )
-                ),
-                new SuggestionVO(
-                        "fiscal",
-                        "PVI_SUGG_FISCAL_04",
-                        Map.of(
-                                "part1", "taxableCapitalGain",
-                                "operator", ">",
-                                "part2", "0"
-                        )
-                ),
-                // condition OR
-                new SuggestionVO(
-                        "fiscal",
-                        "PVI_SUGG_FISCAL_05",
-                        Map.of(
-                                "part1", Map.of(
-                                        "part1", "propertyUse",
-                                        "operator", "==",
-                                        "part2", "secondary-residence"
-                                ),
-                                "operator", "||",
-                                "part2", Map.of(
-                                        "part1", "propertyUse",
-                                        "operator", "==",
-                                        "part2", "location"
-                                )
-                        )
-                ),
-                new SuggestionVO(
-                        "fiscal",
-                        "PVI_SUGG_FISCAL_06",
-                        Map.of(
-                                "part1", "holdingPeriodYears",
-                                "operator", ">",
-                                "part2", "30"
-                        )
-                ),
-                new SuggestionVO(
-                        "fiscal",
-                        "PVI_SUGG_FISCAL_07",
-                        Map.of(
-                                "part1", "holdingPeriodYears",
-                                "operator", ">",
-                                "part2", "22"
-                        )
-                ),
-                new SuggestionVO("fiscal", "PVI_SUGG_FISCAL_08", null),
-                new SuggestionVO(
-                        "fiscal",
-                        "PVI_SUGG_FISCAL_09",
-                        Map.of(
-                                "part1", "grossCapitalGain",
-                                "operator", "<",
-                                "part2", "0"
-                        )
-                ),
-                new SuggestionVO("fiscal", "PVI_SUGG_FISCAL_10", null),
-                new SuggestionVO(
-                        "fiscal",
-                        "PVI_SUGG_FISCAL_11",
-                        Map.of(
-                                "part1", "propertyType",
-                                "operator", "==",
-                                "part2", "land"
-                        )
-                ),
-                new SuggestionVO(
-                        "fiscal",
-                        "PVI_SUGG_FISCAL_12",
-                        Map.of(
-                                "part1", "acquisitionOrigin",
-                                "operator", "==",
-                                "part2", "gift"
-                        )
-                ),
-                new SuggestionVO("fiscal", "PVI_SUGG_FISCAL_13", null),
-                new SuggestionVO("fiscal", "PVI_SUGG_FISCAL_14", null)
-        ));
-
-        props.setSuggestions(map);
-
-        // ----------------------------
-        // 2️⃣ Mock : simuler le bean Spring
-        // ----------------------------
-        when(mockProps.getSuggestion()).thenReturn(props);
-
-        // ----------------------------
-        // 3️⃣ Créer le moteur et initialiser
-        // ----------------------------
-        engine = new SuggestionEngine(mockProps);
-        engine.init();
+    public GenericSuggestionEngine(List<SuggestionItem> suggestions,
+                                   int maxSuggestions,
+                                   SuggestionContextResolver<C> resolver) {
+        this.suggestions = suggestions;
+        this.maxSuggestions = maxSuggestions;
+        this.resolver = resolver;
     }
 
-    // -------------------------------------------------------------------------
-    // 🔥 TEST 1 : Cas "conditions favorables"
-    // -------------------------------------------------------------------------
-    @Test
-    void shouldReturnAtMostShowSuggestions() {
-        // On met des valeurs qui font matcher plusieurs conditions
-        when(result.getTaxableCapitalGain()).thenReturn(new BigDecimal("100000"));
-        when(result.getGrossCapitalGain()).thenReturn(new BigDecimal("200000"));
-        when(result.getTotalTaxes()).thenReturn(new BigDecimal("5000"));
-        when(result.getHoldingPeriodYears()).thenReturn(40);
+    // ============================================================
+    // ==================== PUBLIC API ============================
+    // ============================================================
+    public List<SuggestionItem> computeSuggestions(C context) {
 
-        // Pour simplifier ce test, on laisse propertyUse/propertyType/acquisitionOrigin à null,
-        // donc les conditions qui dépendent de ça ne matcheront pas, et ce n'est pas grave
-        when(req.propertyUse()).thenReturn(null);
-        when(req.propertyType()).thenReturn(null);
-        when(req.acquisitionOrigin()).thenReturn(null);
-
-        List<SuggestionVO> suggestions = engine.computeSuggestions(req, result);
-
-        assertNotNull(suggestions);
-        assertFalse(suggestions.isEmpty());
-        assertTrue(suggestions.size() <= 4, "Ne doit pas dépasser le 'show' configuré (4)");
-    }
-
-    // -------------------------------------------------------------------------
-    // 🔥 TEST 2 : Cas "aucune condition ne matche" → on ne récupère que les suggestions sans condition
-    // -------------------------------------------------------------------------
-    @Test
-    void shouldReturnOnlyUnconditionalSuggestionsWhenAllValuesZero() {
-        when(result.getTaxableCapitalGain()).thenReturn(BigDecimal.ZERO);
-        when(result.getGrossCapitalGain()).thenReturn(BigDecimal.ZERO);
-        when(result.getTotalTaxes()).thenReturn(BigDecimal.ZERO);
-        when(result.getHoldingPeriodYears()).thenReturn(0);
-
-        when(req.propertyUse()).thenReturn(null);
-        when(req.propertyType()).thenReturn(null);
-        when(req.acquisitionOrigin()).thenReturn(null);
-
-        List<SuggestionVO> suggestions = engine.computeSuggestions(req, result);
-
-        assertNotNull(suggestions);
-        assertFalse(suggestions.isEmpty());
-        assertTrue(suggestions.size() <= 4);
-
-        // Dans ce cas, seules les suggestions sans condition devraient passer
-        for (SuggestionVO s : suggestions) {
-            assertNull(s.condition(), "La suggestion " + s.value() + " a une condition et ne devrait pas passer.");
+        if (maxSuggestions <= 0 || suggestions.isEmpty()) {
+            return List.of();
         }
+
+        Map<String, List<SuggestionItem>> eligibleByCategory = filterEligible(context);
+
+        List<SuggestionItem> selected = selectOnePerCategory(eligibleByCategory);
+
+        completeWithLeftovers(eligibleByCategory, selected);
+
+        return selected;
+    }
+
+    // ============================================================
+    // ===================== FILTERING ============================
+    // ============================================================
+    private Map<String, List<SuggestionItem>> filterEligible(C context) {
+        Map<String, List<SuggestionItem>> eligible = new LinkedHashMap<>();
+
+        for (SuggestionItem s : suggestions) {
+            if (s.condition() == null || evalCondition(s.condition(), context)) {
+                eligible.computeIfAbsent(s.category(), k -> new ArrayList<>()).add(s);
+            }
+        }
+        return eligible;
+    }
+
+    // ============================================================
+    // ===================== SELECTION ============================
+    // ============================================================
+    private List<SuggestionItem> selectOnePerCategory(Map<String, List<SuggestionItem>> eligible) {
+        List<SuggestionItem> selected = new ArrayList<>();
+
+        for (List<SuggestionItem> list : eligible.values()) {
+            if (!list.isEmpty()) {
+                selected.add(list.get(random.nextInt(list.size())));
+            }
+        }
+        return selected;
+    }
+
+    private void completeWithLeftovers(Map<String, List<SuggestionItem>> eligible,
+                                       List<SuggestionItem> selected) {
+
+        List<SuggestionItem> leftovers = new ArrayList<>();
+
+        for (List<SuggestionItem> list : eligible.values()) {
+            for (SuggestionItem s : list) {
+                if (!selected.contains(s)) {
+                    leftovers.add(s);
+                }
+            }
+        }
+
+        while (selected.size() < maxSuggestions && !leftovers.isEmpty()) {
+            selected.add(leftovers.remove(random.nextInt(leftovers.size())));
+        }
+    }
+
+    // ============================================================
+    // =================== CONDITION ENGINE ======================
+    // ============================================================
+    @SuppressWarnings("unchecked")
+    private boolean evalCondition(Map<String, Object> node, C context) {
+
+        Object part1 = node.get("part1");
+        Object operator = node.get("operator");
+        Object part2 = node.get("part2");
+
+        if (part1 == null || operator == null || part2 == null) {
+            return true;
+        }
+
+        String op = operator.toString();
+
+        // Condition composée (OR / AND)
+        if (part1 instanceof Map<?, ?> leftMap) {
+            boolean left = evalCondition((Map<String, Object>) leftMap, context);
+            boolean right = evalCondition((Map<String, Object>) part2, context);
+
+            return "||".equals(op) ? left || right :
+                   "&&".equals(op) ? left && right : false;
+        }
+
+        Object leftValue = resolver.resolve(part1.toString(), context);
+        String rightValue = part2.toString();
+
+        return switch (op) {
+            case "==" -> compareEquals(leftValue, rightValue);
+            case ">"  -> compareGreater(leftValue, rightValue);
+            case "<"  -> compareLess(leftValue, rightValue);
+            default   -> false;
+        };
+    }
+
+    // ============================================================
+    // ===================== COMPARATORS =========================
+    // ============================================================
+    private boolean compareEquals(Object left, String right) {
+        if (left == null) return false;
+
+        if (left instanceof BigDecimal bd) {
+            return bd.compareTo(new BigDecimal(right)) == 0;
+        }
+        return left.toString().equalsIgnoreCase(right);
+    }
+
+    private boolean compareGreater(Object left, String right) {
+        return left instanceof BigDecimal bd && bd.compareTo(new BigDecimal(right)) > 0;
+    }
+
+    private boolean compareLess(Object left, String right) {
+        return left instanceof BigDecimal bd && bd.compareTo(new BigDecimal(right)) < 0;
     }
 }
