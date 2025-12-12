@@ -1,12 +1,10 @@
-// Exemple de création d'une liste de FieldError
-List<FieldError> fieldErrors = new ArrayList<>();
-fieldErrors.add(new FieldError("pviRequestDTO", "propertyType", "Property type must be one of 'APARTMENT', 'HOUSE', or 'LAND'."));
-
-// Créer l'exception avec la liste d'erreurs
-MethodArgumentNotValidException exception = new MethodArgumentNotValidException(
-    null, // BindingResult, peut être null si tu n'as pas de BindingResult
-    fieldErrors
-);
-
-// Lancer l'exception
-throw exception;
+private void addViolation(ConstraintValidatorContext ctx, String field, String message) {
+    ctx.disableDefaultConstraintViolation();
+    ctx.buildConstraintViolationWithTemplate(message)
+       .addPropertyNode(field)
+       .addConstraintViolation();
+    // Ajout d'un attribut personnalisé
+    ctx.unwrap(javax.validation.ConstraintValidatorContext.class)
+       .getConstraintValidatorContext()
+       .setConstraintViolation("controllerCode", "PVI");
+}
