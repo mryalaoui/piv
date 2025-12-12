@@ -1,191 +1,46 @@
-package com.bnpparibas.dsibddf.a100919.fis.exposition.api.pvi.dto;
+package com.bnpparibas.dsibddf.a100919.fis.exposition.api.pvi.exception;
 
-import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.*;
-import lombok.Data;
+import com.bnpparibas.dsibddf.a100919.fis.exposition.api.common.ErrorModel;
+import jakarta.validation.ConstraintViolationException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
+import java.util.stream.Collectors;
 
-@Data
-@Schema(name = "PviSimulationRequest")
-@ValidPviRequest // ✅ Cross-field business validation (dates, renovation consistency)
-public class PviRequestDTO {
+@RestControllerAdvice(basePackages =
+        "com.bnpparibas.dsibddf.a100919.fis.exposition.api.pvi")
+public class PviExceptionHandler {
 
-    // ======================= PROPERTY =======================
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ErrorModel> handleValidation(
+            MethodArgumentNotValidException ex) {
 
-    @NotNull
-    @Schema(
-        requiredMode = Schema.RequiredMode.REQUIRED,
-        allowableValues = {"APARTMENT", "HOUSE", "LAND"},
-        description = "Type of the property"
-    )
-    private PropertyType propertyType;
+        String message = ex.getBindingResult()
+                .getFieldErrors()
+                .stream()
+                .map(err -> err.getField() + " : " + err.getDefaultMessage())
+                .collect(Collectors.joining(", "));
 
-    @NotNull
-    @Schema(
-        requiredMode = Schema.RequiredMode.REQUIRED,
-        allowableValues = {"PRIMARY_RESIDENCE", "SECONDARY_RESIDENCE", "LOCATION"},
-        description = "Usage of the property"
-    )
-    private PropertyUse propertyUse;
-
-    @NotNull
-    @Schema(
-        requiredMode = Schema.RequiredMode.REQUIRED,
-        allowableValues = {"PURCHASE", "GIFT", "INHERITANCE"},
-        description = "Origin of acquisition"
-    )
-    private AcquisitionOrigin acquisitionOrigin;
-
-    // ======================= DATES =======================
-
-    @NotNull
-    @Schema(
-        example = "2013-03-15",
-        description = "Acquisition date (ISO-8601 format)"
-    )
-    private LocalDate acquisitionDate;
-
-    @NotNull
-    @Schema(
-        example = "2025-09-10",
-        description = "Sale date (ISO-8601 format)"
-    )
-    private LocalDate saleDate;
-
-    // ======================= PRICES =======================
-
-    @NotNull
-    @Positive
-    @Schema(
-        example = "150000",
-        description = "Acquisition price"
-    )
-    private BigDecimal acquisitionPrice;
-
-    @PositiveOrZero
-    @Schema(
-        example = "0",
-        description = "Actual acquisition costs (if not provided, forfait may apply at business level)"
-    )
-    private BigDecimal actualAcquisitionCosts;
-
-    @NotNull
-    @Positive
-    @Schema(
-        example = "280000",
-        description = "Sale price"
-    )
-    private BigDecimal salePrice;
-
-    @PositiveOrZero
-    @Schema(
-        example = "0",
-        description = "Sale costs"
-    )
-    private BigDecimal saleCosts;
-
-    // ======================= RENOVATION =======================
-
-    @NotNull
-    @Schema(
-        example = "NO",
-        allowableValues = {"YES", "NO"},
-        description = "Indicates whether renovation works were performed"
-    )
-    private YesNo hasRenovation;
-
-    @PositiveOrZero
-    @Schema(
-        example = "0",
-        description = "Renovation amount (mandatory if hasRenovation = YES)"
-    )
-    private BigDecimal renovationAmount;
-}
-3) Validation annotation – English message
-java
-Copier le code
-package com.bnpparibas.dsibddf.a100919.fis.exposition.api.pvi.dto;
-
-import jakarta.validation.Constraint;
-import jakarta.validation.Payload;
-
-import java.lang.annotation.*;
-
-@Documented
-@Constraint(validatedBy = PviRequestValidator.class)
-@Target(ElementType.TYPE)
-@Retention(RetentionPolicy.RUNTIME)
-public @interface ValidPviRequest {
-
-    String message() default "Invalid PVI simulation request";
-
-    Class<?>[] groups() default {};
-
-    Class<? extends Payload>[] payload() default {};
-}
-4) Validator – English error messages
-java
-Copier le code
-package com.bnpparibas.dsibddf.a100919.fis.exposition.api.pvi.dto;
-
-import jakarta.validation.ConstraintValidator;
-import jakarta.validation.ConstraintValidatorContext;
-
-import java.math.BigDecimal;
-import java.time.LocalDate;
-
-public class PviRequestValidator
-        implements ConstraintValidator<ValidPviRequest, PviRequestDTO> {
-
-    @Override
-    public boolean isValid(PviRequestDTO dto, ConstraintValidatorContext ctx) {
-        if (dto == null) return true;
-
-        boolean valid = true;
-
-        // ---- Date consistency: saleDate must be after or equal to acquisitionDate
-        LocalDate acquisition = dto.getAcquisitionDate();
-        LocalDate sale = dto.getSaleDate();
-
-        if (acquisition != null && sale != null && sale.isBefore(acquisition)) {
-            valid = false;
-            addViolation(ctx, "saleDate",
-                    "saleDate must be after or equal to acquisitionDate");
-        }
-
-        // ---- Renovation consistency
-        if (dto.getHasRenovation() != null) {
-            BigDecimal amount = dto.getRenovationAmount();
-
-            if (dto.getHasRenovation() == YesNo.YES) {
-                if (amount == null || amount.signum() <= 0) {
-                    valid = false;
-                    addViolation(ctx, "renovationAmount",
-                            "renovationAmount must be greater than 0 when hasRenovation = YES");
-                }
-            } else {
-                // NO: allow null or zero
-                if (amount != null && amount.signum() < 0) {
-                    valid = false;
-                    addViolation(ctx, "renovationAmount",
-                            "renovationAmount must be zero or positive");
-                }
-            }
-        }
-
-        return valid;
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorModel.builder()
+                        .code("PVI-400-VALIDATION")
+                        .message(message)
+                        .build());
     }
 
-    private void addViolation(
-            ConstraintValidatorContext ctx,
-            String field,
-            String message
-    ) {
-        ctx.disableDefaultConstraintViolation();
-        ctx.buildConstraintViolationWithTemplate(message)
-           .addPropertyNode(field)
-           .addConstraintViolation();
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ErrorModel> handleConstraintViolation(
+            ConstraintViolationException ex) {
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorModel.builder()
+                        .code("PVI-400-VALIDATION")
+                        .message(ex.getMessage())
+                        .build());
     }
 }
