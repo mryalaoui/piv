@@ -1,10 +1,132 @@
-private void addViolation(ConstraintValidatorContext ctx, String field, String message) {
-    ctx.disableDefaultConstraintViolation();
-    ctx.buildConstraintViolationWithTemplate(message)
-       .addPropertyNode(field)
-       .addConstraintViolation();
-    // Ajout d'un attribut personnalisé
-    ctx.unwrap(javax.validation.ConstraintValidatorContext.class)
-       .getConstraintValidatorContext()
-       .setConstraintViolation("controllerCode", "PVI");
+✅ Version 100 % correcte (et qui déclenche bien un 400)
+public class PviRequestValidator
+        implements ConstraintValidator<ValidPviRequest, PviRequestDTO> {
+
+    private static final String SIMULATOR = "PVI";
+
+    @Override
+    public boolean isValid(PviRequestDTO dto, ConstraintValidatorContext ctx) {
+        if (dto == null) return true;
+
+        boolean valid = true;
+
+        // Dates rule
+        LocalDate acq = dto.getAcquisitionDate();
+        LocalDate sale = dto.getSaleDate();
+
+        if (acq != null && sale != null && sale.isBefore(acq)) {
+            valid = false;
+            addViolation(
+                ctx,
+                "saleDate",
+                "SALE_DATE_INVALID",
+                "saleDate must be after or equal to acquisitionDate"
+            );
+        }
+
+        // Renovation rules
+        if (dto.getHasRenovation() != null) {
+            BigDecimal amount = dto.getRenovationAmount();
+
+            if (dto.getHasRenovation() == YesNo.YES) {
+                if (amount == null || amount.signum() <= 0) {
+                    valid = false;
+                    addViolation(
+                        ctx,
+                        "renovationAmount",
+                        "RENOVATION_AMOUNT_REQUIRED",
+                        "renovationAmount must be > 0 when hasRenovation=YES"
+                    );
+                }
+            } else {
+                if (amount != null && amount.signum() < 0) {
+                    valid = false;
+                    addViolation(
+                        ctx,
+                        "renovationAmount",
+                        "RENOVATION_AMOUNT_NEGATIVE",
+                        "renovationAmount must be >= 0"
+                    );
+                }
+            }
+        }
+
+        return valid;
+    }
+
+    private void addViolation(
+            ConstraintValidatorContext ctx,
+            String field,
+            String code,
+            String message
+    ) {
+        ctx.disableDefaultConstraintViolation();
+        ctx.buildConstraintViolationWithTemplate(
+                SIMULATOR + "|" + code + "|" + message
+        )
+        .addPropertyNode(field)
+        .addConstraintViolation();
+    }
 }
+
+
+📌 Ce validateur :
+
+déclenche bien une violation
+
+Spring génère automatiquement une MethodArgumentNotValidException
+
+ton ExceptionTranslator l’attrape
+
+🧠 Pourquoi ça marche (et pourquoi avant ça ne marchait pas)
+Élément	Rôle
+return false	dit à Bean Validation qu’il y a des erreurs
+addConstraintViolation()	enregistre la violation
+@Valid dans le contrôleur	déclenche la validation
+Spring MVC	transforme les violations en MethodArgumentNotValidException
+ExceptionTranslator	renvoie le 400
+
+👉 Aucune exception n’est lancée dans le validateur
+👉 C’est NORMAL
+
+✨ Adapter ExceptionTranslator pour extraire PVI
+
+Dans ton handler :
+
+@ExceptionHandler(MethodArgumentNotValidException.class)
+@ResponseBody
+public ResponseEntity<Object> handleMethodArgumentNotValid(
+        MethodArgumentNotValidException ex) {
+
+    List<String> errors = new ArrayList<>();
+
+    for (FieldError error : ex.getBindingResult().getFieldErrors()) {
+
+        String raw = error.getDefaultMessage(); // ex: PVI|CODE|message
+        String simulator = "UNKNOWN";
+        String code = "";
+        String message = raw;
+
+        if (raw != null && raw.contains("|")) {
+            String[] parts = raw.split("\\|", 3);
+            simulator = parts[0];
+            code = parts[1];
+            message = parts[2];
+        }
+
+        errors.add(
+            simulator + " - " + error.getField() + " : " + message
+        );
+    }
+
+    return ResponseEntity.badRequest().body(
+        ErrorModel.builder()
+            .code("PVI-400-VALIDATION")
+            .message(String.join(", ", errors))
+            .description("Please check your parameters")
+            .timestamp(LocalDateTime.now())
+            .build()
+    );
+}
+
+🧩 Résultat final (exemple réponse)
