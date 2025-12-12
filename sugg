@@ -1,132 +1,60 @@
-✅ Version 100 % correcte (et qui déclenche bien un 400)
-public class PviRequestValidator
-        implements ConstraintValidator<ValidPviRequest, PviRequestDTO> {
+@ExceptionHandler(MethodArgumentNotValidException.class)
+@ResponseBody
+public ResponseEntity<Object> handleMethodArgumentNotValid(final MethodArgumentNotValidException ex) {
 
-    private static final String SIMULATOR = "PVI";
+    // Collect all errors in a readable way
+    final var errors = new ArrayList<String>();
 
-    @Override
-    public boolean isValid(PviRequestDTO dto, ConstraintValidatorContext ctx) {
-        if (dto == null) return true;
+    // Dynamic code: by default, keep a generic one, then try to infer from violations
+    String dynamicCode = "400-VALIDATION";
+    String simulatorFromFirstError = null;
 
-        boolean valid = true;
+    for (final FieldError error : ex.getBindingResult().getFieldErrors()) {
 
-        // Dates rule
-        LocalDate acq = dto.getAcquisitionDate();
-        LocalDate sale = dto.getSaleDate();
+        // Our format is: <SIM>|<CODE>|<MESSAGE>
+        String raw = error.getDefaultMessage();
 
-        if (acq != null && sale != null && sale.isBefore(acq)) {
-            valid = false;
-            addViolation(
-                ctx,
-                "saleDate",
-                "SALE_DATE_INVALID",
-                "saleDate must be after or equal to acquisitionDate"
-            );
-        }
+        String sim = null;
+        String businessCode = null;
+        String msg = raw;
 
-        // Renovation rules
-        if (dto.getHasRenovation() != null) {
-            BigDecimal amount = dto.getRenovationAmount();
-
-            if (dto.getHasRenovation() == YesNo.YES) {
-                if (amount == null || amount.signum() <= 0) {
-                    valid = false;
-                    addViolation(
-                        ctx,
-                        "renovationAmount",
-                        "RENOVATION_AMOUNT_REQUIRED",
-                        "renovationAmount must be > 0 when hasRenovation=YES"
-                    );
-                }
-            } else {
-                if (amount != null && amount.signum() < 0) {
-                    valid = false;
-                    addViolation(
-                        ctx,
-                        "renovationAmount",
-                        "RENOVATION_AMOUNT_NEGATIVE",
-                        "renovationAmount must be >= 0"
-                    );
-                }
+        if (raw != null) {
+            String[] parts = raw.split("\\|", 3);
+            if (parts.length == 3) {
+                sim = parts[0];
+                businessCode = parts[1];
+                msg = parts[2];
             }
         }
 
-        return valid;
-    }
-
-    private void addViolation(
-            ConstraintValidatorContext ctx,
-            String field,
-            String code,
-            String message
-    ) {
-        ctx.disableDefaultConstraintViolation();
-        ctx.buildConstraintViolationWithTemplate(
-                SIMULATOR + "|" + code + "|" + message
-        )
-        .addPropertyNode(field)
-        .addConstraintViolation();
-    }
-}
-
-
-📌 Ce validateur :
-
-déclenche bien une violation
-
-Spring génère automatiquement une MethodArgumentNotValidException
-
-ton ExceptionTranslator l’attrape
-
-🧠 Pourquoi ça marche (et pourquoi avant ça ne marchait pas)
-Élément	Rôle
-return false	dit à Bean Validation qu’il y a des erreurs
-addConstraintViolation()	enregistre la violation
-@Valid dans le contrôleur	déclenche la validation
-Spring MVC	transforme les violations en MethodArgumentNotValidException
-ExceptionTranslator	renvoie le 400
-
-👉 Aucune exception n’est lancée dans le validateur
-👉 C’est NORMAL
-
-✨ Adapter ExceptionTranslator pour extraire PVI
-
-Dans ton handler :
-
-@ExceptionHandler(MethodArgumentNotValidException.class)
-@ResponseBody
-public ResponseEntity<Object> handleMethodArgumentNotValid(
-        MethodArgumentNotValidException ex) {
-
-    List<String> errors = new ArrayList<>();
-
-    for (FieldError error : ex.getBindingResult().getFieldErrors()) {
-
-        String raw = error.getDefaultMessage(); // ex: PVI|CODE|message
-        String simulator = "UNKNOWN";
-        String code = "";
-        String message = raw;
-
-        if (raw != null && raw.contains("|")) {
-            String[] parts = raw.split("\\|", 3);
-            simulator = parts[0];
-            code = parts[1];
-            message = parts[2];
+        // Determine simulator for dynamic response code
+        if (simulatorFromFirstError == null && sim != null && !sim.isBlank()) {
+            simulatorFromFirstError = sim;
         }
 
-        errors.add(
-            simulator + " - " + error.getField() + " : " + message
-        );
+        // Build readable error list
+        // Example: "PVI - saleDate : saleDate must be after or equal to acquisitionDate"
+        if (sim != null && !sim.isBlank()) {
+            errors.add(sim + " - " + error.getField() + " : " + msg);
+        } else {
+            errors.add(error.getField() + " : " + msg);
+        }
+
+        // If you want to include businessCode too in the list, use this instead:
+        // errors.add(sim + " - " + error.getField() + " (" + businessCode + ") : " + msg);
     }
 
-    return ResponseEntity.badRequest().body(
-        ErrorModel.builder()
-            .code("PVI-400-VALIDATION")
-            .message(String.join(", ", errors))
-            .description("Please check your parameters")
-            .timestamp(LocalDateTime.now())
-            .build()
-    );
-}
+    // Build dynamic error code: e.g. "PVI-400-VALIDATION" or "PER-400-VALIDATION"
+    if (simulatorFromFirstError != null && !simulatorFromFirstError.isBlank()) {
+        dynamicCode = simulatorFromFirstError + "-400-VALIDATION";
+    }
 
-🧩 Résultat final (exemple réponse)
+    log.info(ex.getMessage());
+
+    return new ResponseEntity<>(ErrorModel.builder()
+            .code(dynamicCode)
+            .message(String.join(", ", errors))
+            .description(PARAMETERS_ERROR_DESC)
+            .timestamp(LocalDateTime.now())
+            .build(), buildHttpHeaders(), HttpStatus.BAD_REQUEST);
+}
