@@ -1,24 +1,22 @@
-1️⃣ Fabrique de propriétés (réutilisable)
+package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo;
 
-👉 Très important : on isole la construction des données
-→ ça évite de polluer le test.
-
-📄 PviBusinessPropertiesTestFactory.java
-package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.test;
-
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.*;
+import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
-public final class PviBusinessPropertiesTestFactory {
+import static org.assertj.core.api.Assertions.assertThat;
 
-    private PviBusinessPropertiesTestFactory() {}
+class PviBusinessPropertiesVOTest {
 
-    public static PviBusinessPropertiesVO build() {
+    @Test
+    void shouldHoldAllBusinessPropertiesData() {
+        // =========================
+        // GIVEN
+        // =========================
 
-        // ================== DEDUCTIONS ==================
+        // Deduction rates
         DeductionRateVO ir = new DeductionRateVO(
                 new BigDecimal("6"),
                 new BigDecimal("30")
@@ -28,11 +26,12 @@ public final class PviBusinessPropertiesTestFactory {
                 new BigDecimal("8.25")
         );
 
-        Map<Integer, DeductionYearVO> deductionsByYear = Map.of(
-                10, new DeductionYearVO(ir, ps)
-        );
+        DeductionYearVO year10 = new DeductionYearVO(ir, ps);
 
-        // ================== SURTAXE ==================
+        Map<Integer, DeductionYearVO> deductionsByYear =
+                Map.of(10, year10);
+
+        // Capital gain surtax bracket
         CapitalGainTaxBracketVO bracket = new CapitalGainTaxBracketVO(
                 new BigDecimal("50001"),
                 new BigDecimal("60000"),
@@ -40,8 +39,8 @@ public final class PviBusinessPropertiesTestFactory {
                 new BigDecimal("0.05")
         );
 
-        // ================== SUGGESTIONS ==================
-        SuggestionVO fiscalSuggestion = new SuggestionVO(
+        // Suggestion
+        SuggestionVO suggestion = new SuggestionVO(
                 "fiscal",
                 "PVI_SUGG_FISCAL_01",
                 Map.of(
@@ -55,91 +54,46 @@ public final class PviBusinessPropertiesTestFactory {
                 new PviBusinessPropertiesVO.SuggestionProperties();
         suggestionProperties.setShow(4);
         suggestionProperties.setSuggestions(
-                Map.of("fiscal", List.of(fiscalSuggestion))
+                Map.of("fiscal", List.of(suggestion))
         );
 
-        // ================== ROOT ==================
-        PviBusinessPropertiesVO vo = new PviBusinessPropertiesVO();
-        vo.setDeductionsByYear(deductionsByYear);
-        vo.setCapitalGainSurtaxBrackets(List.of(bracket));
-        vo.setSuggestion(suggestionProperties);
+        // Root object
+        PviBusinessPropertiesVO properties = new PviBusinessPropertiesVO();
+        properties.setDeductionsByYear(deductionsByYear);
+        properties.setCapitalGainSurtaxBrackets(List.of(bracket));
+        properties.setSuggestion(suggestionProperties);
 
-        return vo;
-    }
-}
-
-
-👉 Cette classe est clé :
-
-claire
-
-maintenable
-
-alignée avec le YAML
-
-réutilisable dans plusieurs TU
-
-2️⃣ Test unitaire de SuggestionEngine (sans Spring)
-📄 SuggestionEngineTest.java
-package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine;
-
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.dto.PviSimulationRequest;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.result.PviSimulationResult;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.PviBusinessPropertiesVO;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.SuggestionVO;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.test.PviBusinessPropertiesTestFactory;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
-import java.math.BigDecimal;
-import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
-
-class SuggestionEngineTest {
-
-    private SuggestionEngine engine;
-
-    @BeforeEach
-    void setUp() {
-        PviBusinessPropertiesVO properties =
-                PviBusinessPropertiesTestFactory.build();
-
-        engine = new SuggestionEngine(properties);
-        engine.init(); // ⚠️ IMPORTANT : init manuel
-    }
-
-    @Test
-    void shouldReturnSuggestionWhenConditionIsSatisfied() {
-        // GIVEN
-        PviSimulationRequest req = PviSimulationRequest.builder()
-                .build();
-
-        PviSimulationResult result = PviSimulationResult.builder()
-                .taxableCapitalGain(new BigDecimal("60000"))
-                .build();
-
-        // WHEN
-        List<SuggestionVO> suggestions =
-                engine.computeSuggestions(req, result);
-
+        // =========================
         // THEN
-        assertThat(suggestions).isNotEmpty();
-        assertThat(suggestions.get(0).code())
-                .isEqualTo("PVI_SUGG_FISCAL_01");
-    }
+        // =========================
 
-    @Test
-    void shouldReturnNoSuggestionWhenConditionIsNotSatisfied() {
-        PviSimulationRequest req = PviSimulationRequest.builder().build();
+        assertThat(properties.getDeductionsByYear()).isNotNull();
+        assertThat(properties.getDeductionsByYear()).containsKey(10);
 
-        PviSimulationResult result = PviSimulationResult.builder()
-                .taxableCapitalGain(BigDecimal.ZERO)
-                .build();
+        DeductionYearVO loadedYear = properties.getDeductionsByYear().get(10);
+        assertThat(loadedYear.IR().tauxAnnuel()).isEqualByComparingTo("6");
+        assertThat(loadedYear.PS().tauxAnnuel()).isEqualByComparingTo("1.65");
 
-        List<SuggestionVO> suggestions =
-                engine.computeSuggestions(req, result);
+        assertThat(properties.getCapitalGainSurtaxBrackets()).hasSize(1);
+        CapitalGainTaxBracketVO loadedBracket =
+                properties.getCapitalGainSurtaxBrackets().get(0);
 
-        assertThat(suggestions).isEmpty();
+        assertThat(loadedBracket.min()).isEqualByComparingTo("50001");
+        assertThat(loadedBracket.max()).isEqualByComparingTo("60000");
+        assertThat(loadedBracket.pourcentagePlusValue()).isEqualByComparingTo("2");
+        assertThat(loadedBracket.rapport()).isEqualByComparingTo("0.05");
+
+        assertThat(properties.getSuggestion()).isNotNull();
+        assertThat(properties.getSuggestion().getShow()).isEqualTo(4);
+
+        assertThat(properties.getSuggestion().getSuggestions())
+                .containsKey("fiscal");
+
+        SuggestionVO loadedSuggestion =
+                properties.getSuggestion().getSuggestions().get("fiscal").get(0);
+
+        assertThat(loadedSuggestion.category()).isEqualTo("fiscal");
+        assertThat(loadedSuggestion.code()).isEqualTo("PVI_SUGG_FISCAL_01");
+        assertThat(loadedSuggestion.condition()).isNotNull();
     }
 }
