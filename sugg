@@ -1,200 +1,117 @@
-OK — on va l’intégrer sans casser ton code actuel et en gardant SuggestionEngine comme façade PVI.
+package com.bnpparibas.dsibddf.a100919.fis.domain.common.suggestion;
 
-L’idée la plus simple :
-
-Tu crées un moteur générique dans un package “common”
-
-Tu crées, côté PVI, un context + un resolver
-
-Ta classe actuelle SuggestionEngine reste un @Service Spring, mais délègue au moteur générique.
-
-1) Où mettre les classes
-A. Module / package “commun” (réutilisable)
-
-Dans ton module domain (ou un module commun si tu en as un), crée :
-
-com.bnpparibas.dsibddf.a100919.fis.domain.common.suggestion
-
-GenericSuggestionEngine<C>
-
-SuggestionContextResolver<C>
-
-Ces classes ne dépendent d’aucun simulateur.
-
-B. Module / package PVI (spécifique)
-
-Dans PVI, crée :
-
-com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine.suggestion
-
-PviSuggestionContext
-
-PviSuggestionResolver
-
-Comme ça, PVI garde son métier.
-
-2) PviSuggestionContext : c’est quoi et où l’utiliser ?
-
-C’est juste un objet “porteur” qui regroupe les 2 objets que tu utilises déjà dans resolveVariable :
-
-package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine.suggestion;
-
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.dto.PviSimulationRequest;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.result.PviSimulationResult;
-
-public record PviSuggestionContext(
-        PviSimulationRequest req,
-        PviSimulationResult result
-) {}
-
-
-👉 Il sera créé dans computeSuggestions(req, result) et envoyé au moteur générique.
-
-3) PviSuggestionResolver : comment le brancher
-
-Il remplace ta méthode resolveVariable(...) actuelle.
-
-package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine.suggestion;
-
-import com.bnpparibas.dsibddf.a100919.fis.domain.common.suggestion.SuggestionContextResolver;
-
-import java.math.BigDecimal;
-
-public class PviSuggestionResolver implements SuggestionContextResolver<PviSuggestionContext> {
-
-    @Override
-    public Object resolve(String name, PviSuggestionContext ctx) {
-        return switch (name) {
-            case "grossCapitalGain"   -> ctx.result().getGrossCapitalGain();
-            case "taxableCapitalGain" -> ctx.result().getTaxableCapitalGain();
-            case "impots"             -> ctx.result().getTotalTaxes();
-            case "holdingPeriodYears" -> BigDecimal.valueOf(ctx.result().getHoldingPeriodYears());
-
-            case "propertyUse" -> ctx.req().propertyUse() == null ? null
-                    : ctx.req().propertyUse().name().toLowerCase().replace('_', '-');
-
-            case "propertyType" -> ctx.req().propertyType() == null ? null
-                    : ctx.req().propertyType().name().toLowerCase();
-
-            case "acquisitionOrigin" -> ctx.req().acquisitionOrigin() == null ? null
-                    : ctx.req().acquisitionOrigin().name().toLowerCase();
-
-            default -> null;
-        };
-    }
-}
-
-
-👉 Celui-ci peut être :
-
-soit une classe simple instanciée (new PviSuggestionResolver())
-
-soit un bean Spring @Component si tu veux l’injecter (optionnel)
-
-4) Adapter ta classe actuelle SuggestionEngine (sans changer l’API)
-
-Tu gardes exactement :
-
-@Service
-
-init()
-
-computeSuggestions(PviSimulationRequest, PviSimulationResult) retourne List<SuggestionVO>
-
-Mais au lieu d’avoir toute la logique dedans, tu délègues.
-
-✅ Version d’adaptation minimaliste (recommandée)
-package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine;
-
-import com.bnpparibas.dsibddf.a100919.fis.domain.common.suggestion.GenericSuggestionEngine;
-import com.bnpparibas.dsibddf.a100919.fis.domain.common.suggestion.SuggestionContextResolver;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.dto.PviSimulationRequest;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.result.PviSimulationResult;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.PviBusinessPropertiesVO;
 import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.SuggestionVO;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine.suggestion.PviSuggestionContext;
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine.suggestion.PviSuggestionResolver;
-import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
-import lombok.Setter;
-import org.springframework.stereotype.Service;
 
+import java.security.SecureRandom;
 import java.util.*;
 
-@Service
-@RequiredArgsConstructor
-public class SuggestionEngine {
+public class GenericSuggestionEngine<C> {
 
-    private final PviBusinessPropertiesVO pviBusinessProperties;
+    private final List<SuggestionVO> suggestions;
+    private final int maxSuggestions;
+    private final SuggestionContextResolver<C> resolver;
+    private final SecureRandom random = new SecureRandom();
 
-    @Setter
-    private int maxSuggestions = 4;
+    public GenericSuggestionEngine(
+            List<SuggestionVO> suggestions,
+            int maxSuggestions,
+            SuggestionContextResolver<C> resolver
+    ) {
+        this.suggestions = suggestions;
+        this.maxSuggestions = maxSuggestions;
+        this.resolver = resolver;
+    }
 
-    private final List<SuggestionVO> suggestionVOS = new ArrayList<>();
-
-    // Le moteur générique (initialisé après lecture YAML)
-    private GenericSuggestionEngine<PviSuggestionContext> delegate;
-
-    // Resolver métier PVI
-    private final SuggestionContextResolver<PviSuggestionContext> resolver = new PviSuggestionResolver();
-
-    @PostConstruct
-    public void init() {
-        PviBusinessPropertiesVO.SuggestionProperties suggestionProps = pviBusinessProperties.getSuggestion();
-        if (suggestionProps == null) return;
-
-        if (suggestionProps.getShow() > 0) {
-            this.maxSuggestions = suggestionProps.getShow();
+    public List<SuggestionVO> computeSuggestions(C context) {
+        if (maxSuggestions <= 0 || suggestions.isEmpty()) {
+            return List.of();
         }
 
-        Map<String, List<SuggestionVO>> suggestionsByCat = suggestionProps.getSuggestions();
-        if (suggestionsByCat == null || suggestionsByCat.isEmpty()) return;
+        Map<String, List<SuggestionVO>> eligibleByCategory = new LinkedHashMap<>();
 
-        // Flatten + normalisation catégorie
-        suggestionsByCat.forEach((categoryKey, list) -> {
-            if (list == null) return;
-            for (SuggestionVO s : list) {
-                if (s.category() == null || s.category().isBlank()) {
-                    suggestionVOS.add(new SuggestionVO(categoryKey, s.value(), s.condition()));
-                } else {
-                    suggestionVOS.add(s);
+        for (SuggestionVO s : suggestions) {
+            if (s.condition() == null || evalCondition(s.condition(), context)) {
+                eligibleByCategory
+                        .computeIfAbsent(s.category(), k -> new ArrayList<>())
+                        .add(s);
+            }
+        }
+
+        return pickSuggestions(eligibleByCategory);
+    }
+
+    // ===================== PRIVATE =====================
+
+    private List<SuggestionVO> pickSuggestions(Map<String, List<SuggestionVO>> eligibleByCategory) {
+        List<SuggestionVO> selected = new ArrayList<>();
+        List<SuggestionVO> leftovers = new ArrayList<>();
+
+        for (List<SuggestionVO> perCategory : eligibleByCategory.values()) {
+            if (perCategory.isEmpty()) continue;
+
+            int idx = random.nextInt(perCategory.size());
+            selected.add(perCategory.get(idx));
+
+            for (int i = 0; i < perCategory.size(); i++) {
+                if (i != idx) {
+                    leftovers.add(perCategory.get(i));
                 }
             }
-        });
+        }
 
-        // ✅ Initialisation du moteur générique avec les suggestions PVI
-        this.delegate = new GenericSuggestionEngine<>(suggestionVOS, maxSuggestions, resolver);
+        while (selected.size() < maxSuggestions && !leftovers.isEmpty()) {
+            selected.add(leftovers.remove(random.nextInt(leftovers.size())));
+        }
+
+        return selected;
     }
 
-    public List<SuggestionVO> computeSuggestions(PviSimulationRequest req, PviSimulationResult result) {
-        if (delegate == null) return List.of();
+    @SuppressWarnings("unchecked")
+    private boolean evalCondition(Map<String, Object> node, C context) {
+        if (node == null || node.isEmpty()) return true;
 
-        PviSuggestionContext ctx = new PviSuggestionContext(req, result);
-        return delegate.computeSuggestions(ctx);
+        Object part1Obj = node.get("part1");
+        Object opObj = node.get("operator");
+        Object part2Obj = node.get("part2");
+
+        if (part1Obj == null || opObj == null || part2Obj == null) return true;
+
+        String op = String.valueOf(opObj);
+
+        // Condition composée
+        if (part1Obj instanceof Map<?, ?> leftMap
+                && leftMap.containsKey("part1")
+                && leftMap.containsKey("operator")) {
+
+            boolean left = evalCondition((Map<String, Object>) part1Obj, context);
+            boolean right = evalCondition((Map<String, Object>) part2Obj, context);
+
+            return "||".equals(op) ? left || right
+                 : "&&".equals(op) && left && right;
+        }
+
+        Object leftValue = resolver.resolve(String.valueOf(part1Obj), context);
+        String rightRaw = String.valueOf(part2Obj);
+
+        return switch (op) {
+            case "==" -> compareEquals(leftValue, rightRaw);
+            case ">"  -> compareGreater(leftValue, rightRaw);
+            case "<"  -> compareLess(leftValue, rightRaw);
+            default   -> false;
+        };
+    }
+
+    private boolean compareEquals(Object left, String rightRaw) {
+        return left != null && left.toString().equalsIgnoreCase(rightRaw);
+    }
+
+    private boolean compareGreater(Object left, String rightRaw) {
+        return left instanceof Number n
+                && Double.parseDouble(rightRaw) < n.doubleValue();
+    }
+
+    private boolean compareLess(Object left, String rightRaw) {
+        return left instanceof Number n
+                && Double.parseDouble(rightRaw) > n.doubleValue();
     }
 }
-
-
-👉 Résultat : ta classe reste inchangée pour les appelants, mais elle devient une façade.
-
-5) Et pour un autre simulateur demain ?
-
-Tu refais juste :
-
-XxxSuggestionContext
-
-XxxSuggestionResolver
-
-XxxSuggestionEngine (façade) qui lit ses propres properties XxxBusinessPropertiesVO et délègue au moteur générique.
-
-6) Variante encore plus simple (si tu ne veux pas créer de context)
-
-Tu peux faire GenericSuggestionEngine sur un type Object[] ou sur un Map<String,Object> mais tu perds du typage. Le Context record est le meilleur compromis.
-
-Si tu veux, envoie-moi :
-
-la signature exacte de PviSimulationRequest (les enums)
-
-la version exacte de SuggestionVO (avec url ou non)
-
-et je te colle une version 100% compilable dans ton projet (imports + packages corrects).
