@@ -1,10 +1,200 @@
-package com.bnpparibas.dsibddf.simulator.common.suggestion;
+OK — on va l’intégrer sans casser ton code actuel et en gardant SuggestionEngine comme façade PVI.
 
-public interface SuggestionContextResolver<C> {
+L’idée la plus simple :
 
-    /**
-     * Résout une variable métier (ex: "grossCapitalGain")
-     * à partir du contexte du simulateur.
-     */
-    Object resolve(String variableName, C context);
+Tu crées un moteur générique dans un package “common”
+
+Tu crées, côté PVI, un context + un resolver
+
+Ta classe actuelle SuggestionEngine reste un @Service Spring, mais délègue au moteur générique.
+
+1) Où mettre les classes
+A. Module / package “commun” (réutilisable)
+
+Dans ton module domain (ou un module commun si tu en as un), crée :
+
+com.bnpparibas.dsibddf.a100919.fis.domain.common.suggestion
+
+GenericSuggestionEngine<C>
+
+SuggestionContextResolver<C>
+
+Ces classes ne dépendent d’aucun simulateur.
+
+B. Module / package PVI (spécifique)
+
+Dans PVI, crée :
+
+com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine.suggestion
+
+PviSuggestionContext
+
+PviSuggestionResolver
+
+Comme ça, PVI garde son métier.
+
+2) PviSuggestionContext : c’est quoi et où l’utiliser ?
+
+C’est juste un objet “porteur” qui regroupe les 2 objets que tu utilises déjà dans resolveVariable :
+
+package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine.suggestion;
+
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.dto.PviSimulationRequest;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.result.PviSimulationResult;
+
+public record PviSuggestionContext(
+        PviSimulationRequest req,
+        PviSimulationResult result
+) {}
+
+
+👉 Il sera créé dans computeSuggestions(req, result) et envoyé au moteur générique.
+
+3) PviSuggestionResolver : comment le brancher
+
+Il remplace ta méthode resolveVariable(...) actuelle.
+
+package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine.suggestion;
+
+import com.bnpparibas.dsibddf.a100919.fis.domain.common.suggestion.SuggestionContextResolver;
+
+import java.math.BigDecimal;
+
+public class PviSuggestionResolver implements SuggestionContextResolver<PviSuggestionContext> {
+
+    @Override
+    public Object resolve(String name, PviSuggestionContext ctx) {
+        return switch (name) {
+            case "grossCapitalGain"   -> ctx.result().getGrossCapitalGain();
+            case "taxableCapitalGain" -> ctx.result().getTaxableCapitalGain();
+            case "impots"             -> ctx.result().getTotalTaxes();
+            case "holdingPeriodYears" -> BigDecimal.valueOf(ctx.result().getHoldingPeriodYears());
+
+            case "propertyUse" -> ctx.req().propertyUse() == null ? null
+                    : ctx.req().propertyUse().name().toLowerCase().replace('_', '-');
+
+            case "propertyType" -> ctx.req().propertyType() == null ? null
+                    : ctx.req().propertyType().name().toLowerCase();
+
+            case "acquisitionOrigin" -> ctx.req().acquisitionOrigin() == null ? null
+                    : ctx.req().acquisitionOrigin().name().toLowerCase();
+
+            default -> null;
+        };
+    }
 }
+
+
+👉 Celui-ci peut être :
+
+soit une classe simple instanciée (new PviSuggestionResolver())
+
+soit un bean Spring @Component si tu veux l’injecter (optionnel)
+
+4) Adapter ta classe actuelle SuggestionEngine (sans changer l’API)
+
+Tu gardes exactement :
+
+@Service
+
+init()
+
+computeSuggestions(PviSimulationRequest, PviSimulationResult) retourne List<SuggestionVO>
+
+Mais au lieu d’avoir toute la logique dedans, tu délègues.
+
+✅ Version d’adaptation minimaliste (recommandée)
+package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine;
+
+import com.bnpparibas.dsibddf.a100919.fis.domain.common.suggestion.GenericSuggestionEngine;
+import com.bnpparibas.dsibddf.a100919.fis.domain.common.suggestion.SuggestionContextResolver;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.dto.PviSimulationRequest;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.result.PviSimulationResult;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.PviBusinessPropertiesVO;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.SuggestionVO;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine.suggestion.PviSuggestionContext;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine.suggestion.PviSuggestionResolver;
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
+import lombok.Setter;
+import org.springframework.stereotype.Service;
+
+import java.util.*;
+
+@Service
+@RequiredArgsConstructor
+public class SuggestionEngine {
+
+    private final PviBusinessPropertiesVO pviBusinessProperties;
+
+    @Setter
+    private int maxSuggestions = 4;
+
+    private final List<SuggestionVO> suggestionVOS = new ArrayList<>();
+
+    // Le moteur générique (initialisé après lecture YAML)
+    private GenericSuggestionEngine<PviSuggestionContext> delegate;
+
+    // Resolver métier PVI
+    private final SuggestionContextResolver<PviSuggestionContext> resolver = new PviSuggestionResolver();
+
+    @PostConstruct
+    public void init() {
+        PviBusinessPropertiesVO.SuggestionProperties suggestionProps = pviBusinessProperties.getSuggestion();
+        if (suggestionProps == null) return;
+
+        if (suggestionProps.getShow() > 0) {
+            this.maxSuggestions = suggestionProps.getShow();
+        }
+
+        Map<String, List<SuggestionVO>> suggestionsByCat = suggestionProps.getSuggestions();
+        if (suggestionsByCat == null || suggestionsByCat.isEmpty()) return;
+
+        // Flatten + normalisation catégorie
+        suggestionsByCat.forEach((categoryKey, list) -> {
+            if (list == null) return;
+            for (SuggestionVO s : list) {
+                if (s.category() == null || s.category().isBlank()) {
+                    suggestionVOS.add(new SuggestionVO(categoryKey, s.value(), s.condition()));
+                } else {
+                    suggestionVOS.add(s);
+                }
+            }
+        });
+
+        // ✅ Initialisation du moteur générique avec les suggestions PVI
+        this.delegate = new GenericSuggestionEngine<>(suggestionVOS, maxSuggestions, resolver);
+    }
+
+    public List<SuggestionVO> computeSuggestions(PviSimulationRequest req, PviSimulationResult result) {
+        if (delegate == null) return List.of();
+
+        PviSuggestionContext ctx = new PviSuggestionContext(req, result);
+        return delegate.computeSuggestions(ctx);
+    }
+}
+
+
+👉 Résultat : ta classe reste inchangée pour les appelants, mais elle devient une façade.
+
+5) Et pour un autre simulateur demain ?
+
+Tu refais juste :
+
+XxxSuggestionContext
+
+XxxSuggestionResolver
+
+XxxSuggestionEngine (façade) qui lit ses propres properties XxxBusinessPropertiesVO et délègue au moteur générique.
+
+6) Variante encore plus simple (si tu ne veux pas créer de context)
+
+Tu peux faire GenericSuggestionEngine sur un type Object[] ou sur un Map<String,Object> mais tu perds du typage. Le Context record est le meilleur compromis.
+
+Si tu veux, envoie-moi :
+
+la signature exacte de PviSimulationRequest (les enums)
+
+la version exacte de SuggestionVO (avec url ou non)
+
+et je te colle une version 100% compilable dans ton projet (imports + packages corrects).
