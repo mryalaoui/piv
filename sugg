@@ -1,68 +1,145 @@
-package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo;
+1️⃣ Fabrique de propriétés (réutilisable)
 
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
+👉 Très important : on isole la construction des données
+→ ça évite de polluer le test.
+
+📄 PviBusinessPropertiesTestFactory.java
+package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.test;
+
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.*;
 
 import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
+
+public final class PviBusinessPropertiesTestFactory {
+
+    private PviBusinessPropertiesTestFactory() {}
+
+    public static PviBusinessPropertiesVO build() {
+
+        // ================== DEDUCTIONS ==================
+        DeductionRateVO ir = new DeductionRateVO(
+                new BigDecimal("6"),
+                new BigDecimal("30")
+        );
+        DeductionRateVO ps = new DeductionRateVO(
+                new BigDecimal("1.65"),
+                new BigDecimal("8.25")
+        );
+
+        Map<Integer, DeductionYearVO> deductionsByYear = Map.of(
+                10, new DeductionYearVO(ir, ps)
+        );
+
+        // ================== SURTAXE ==================
+        CapitalGainTaxBracketVO bracket = new CapitalGainTaxBracketVO(
+                new BigDecimal("50001"),
+                new BigDecimal("60000"),
+                new BigDecimal("2"),
+                new BigDecimal("0.05")
+        );
+
+        // ================== SUGGESTIONS ==================
+        SuggestionVO fiscalSuggestion = new SuggestionVO(
+                "fiscal",
+                "PVI_SUGG_FISCAL_01",
+                Map.of(
+                        "part1", "taxableCapitalGain",
+                        "operator", ">",
+                        "part2", "0"
+                )
+        );
+
+        PviBusinessPropertiesVO.SuggestionProperties suggestionProperties =
+                new PviBusinessPropertiesVO.SuggestionProperties();
+        suggestionProperties.setShow(4);
+        suggestionProperties.setSuggestions(
+                Map.of("fiscal", List.of(fiscalSuggestion))
+        );
+
+        // ================== ROOT ==================
+        PviBusinessPropertiesVO vo = new PviBusinessPropertiesVO();
+        vo.setDeductionsByYear(deductionsByYear);
+        vo.setCapitalGainSurtaxBrackets(List.of(bracket));
+        vo.setSuggestion(suggestionProperties);
+
+        return vo;
+    }
+}
+
+
+👉 Cette classe est clé :
+
+claire
+
+maintenable
+
+alignée avec le YAML
+
+réutilisable dans plusieurs TU
+
+2️⃣ Test unitaire de SuggestionEngine (sans Spring)
+📄 SuggestionEngineTest.java
+package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.service.engine;
+
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.dto.PviSimulationRequest;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.result.PviSimulationResult;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.PviBusinessPropertiesVO;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.SuggestionVO;
+import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.test.PviBusinessPropertiesTestFactory;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
-@EnableConfigurationProperties(PviBusinessPropertiesVO.class)
-@ActiveProfiles("pvi-test")
-class PviBusinessPropertiesVOTest {
+class SuggestionEngineTest {
 
-    @Autowired
-    private PviBusinessPropertiesVO properties;
+    private SuggestionEngine engine;
 
-    @Test
-    void shouldBindDeductionsByYearFromYaml() {
-        assertThat(properties.getDeductionsByYear()).isNotNull();
-        assertThat(properties.getDeductionsByYear()).containsKey(10);
+    @BeforeEach
+    void setUp() {
+        PviBusinessPropertiesVO properties =
+                PviBusinessPropertiesTestFactory.build();
 
-        DeductionYearVO year10 = properties.getDeductionsByYear().get(10);
-
-        assertThat(year10.IR().tauxAnnuel()).isEqualByComparingTo("6");
-        assertThat(year10.IR().tauxAbattementGlobal()).isEqualByComparingTo("30");
-
-        assertThat(year10.PS().tauxAnnuel()).isEqualByComparingTo("1.65");
-        assertThat(year10.PS().tauxAbattementGlobal()).isEqualByComparingTo("8.25");
+        engine = new SuggestionEngine(properties);
+        engine.init(); // ⚠️ IMPORTANT : init manuel
     }
 
     @Test
-    void shouldBindCapitalGainSurtaxBracketsFromYaml() {
-        assertThat(properties.getCapitalGainSurtaxBrackets()).hasSize(1);
+    void shouldReturnSuggestionWhenConditionIsSatisfied() {
+        // GIVEN
+        PviSimulationRequest req = PviSimulationRequest.builder()
+                .build();
 
-        CapitalGainTaxBracketVO bracket =
-                properties.getCapitalGainSurtaxBrackets().get(0);
+        PviSimulationResult result = PviSimulationResult.builder()
+                .taxableCapitalGain(new BigDecimal("60000"))
+                .build();
 
-        assertThat(bracket.min()).isEqualByComparingTo("50001");
-        assertThat(bracket.max()).isEqualByComparingTo("60000");
-        assertThat(bracket.pourcentagePlusValue()).isEqualByComparingTo("2");
-        assertThat(bracket.rapport()).isEqualByComparingTo("0.05");
+        // WHEN
+        List<SuggestionVO> suggestions =
+                engine.computeSuggestions(req, result);
+
+        // THEN
+        assertThat(suggestions).isNotEmpty();
+        assertThat(suggestions.get(0).code())
+                .isEqualTo("PVI_SUGG_FISCAL_01");
     }
 
     @Test
-    void shouldBindSuggestionsFromYaml() {
-        assertThat(properties.getSuggestion()).isNotNull();
-        assertThat(properties.getSuggestion().getShow()).isEqualTo(4);
+    void shouldReturnNoSuggestionWhenConditionIsNotSatisfied() {
+        PviSimulationRequest req = PviSimulationRequest.builder().build();
 
-        assertThat(properties.getSuggestion().getSuggestions())
-                .containsKey("fiscal");
+        PviSimulationResult result = PviSimulationResult.builder()
+                .taxableCapitalGain(BigDecimal.ZERO)
+                .build();
 
-        SuggestionVO suggestion =
-                properties.getSuggestion()
-                        .getSuggestions()
-                        .get("fiscal")
-                        .get(0);
+        List<SuggestionVO> suggestions =
+                engine.computeSuggestions(req, result);
 
-        assertThat(suggestion.category()).isEqualTo("fiscal");
-        assertThat(suggestion.code()).isEqualTo("PVI_SUGG_FISCAL_01");
-
-        assertThat(suggestion.condition()).isNotNull();
-        assertThat(suggestion.condition().get("operator")).isEqualTo(">");
+        assertThat(suggestions).isEmpty();
     }
 }
