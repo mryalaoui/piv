@@ -1,140 +1,20 @@
-package com.bnpparibas.dsibddf.a100919.fis.exposition.api.pvi.validation;
-
-import com.bnpparibas.dsibddf.a100919.fis.exposition.api.pvi.dto.PviRequestDTO;
-import com.bnpparibas.dsibddf.a100919.fis.exposition.api.pvi.dto.YesNo;
-import com.bnpparibas.dsibddf.a100919.fis.exposition.api.pvi.exception.PviValidationException;
-import jakarta.validation.ConstraintValidator;
-import jakarta.validation.ConstraintValidatorContext;
-
-import java.math.BigDecimal;
-import java.time.LocalDate;
-
-public class PviRequestValidator implements ConstraintValidator<ValidPviRequest, PviRequestDTO> {
-
-    @Override
-    public boolean isValid(PviRequestDTO dto, ConstraintValidatorContext context) {
-        if (dto == null) {
-            return true;
-        }
-
-        // 1) Date consistency: saleDate >= acquisitionDate
-        LocalDate acquisition = dto.getAcquisitionDate();
-        LocalDate sale = dto.getSaleDate();
-        if (acquisition != null && sale != null && sale.isBefore(acquisition)) {
-            throw new PviValidationException(
-                    "saleDate",
-                    "saleDate must be after or equal to acquisitionDate"
-            );
-        }
-
-        // 2) Renovation rules: if hasRenovation=YES => renovationAmount > 0
-        if (dto.getHasRenovation() != null) {
-            BigDecimal amount = dto.getRenovationAmount();
-
-            if (dto.getHasRenovation() == YesNo.YES) {
-                if (amount == null || amount.signum() <= 0) {
-                    throw new PviValidationException(
-                            "renovationAmount",
-                            "renovationAmount must be greater than 0 when hasRenovation = YES"
-                    );
-                }
-            } else {
-                // NO => allow null or 0 (but reject negative)
-                if (amount != null && amount.signum() < 0) {
-                    throw new PviValidationException(
-                            "renovationAmount",
-                            "renovationAmount must be zero or positive"
-                    );
-                }
-            }
-        }
-
-        return true;
-    }
-}
-4) PviExceptionHandler.java (le point clé pour stopper le 500)
-Mets-le dans un package scanné par Spring, et scope-le sur exposition.api.pvi si tu veux qu’il ne s’applique qu’à PVI.
-
-java
-Copier le code
 package com.bnpparibas.dsibddf.a100919.fis.exposition.api.pvi.exception;
 
-import com.bnpparibas.dsibddf.a100919.fis.exposition.api.common.ErrorModel;
-import com.fasterxml.jackson.databind.exc.InvalidFormatException;
-import jakarta.validation.ConstraintViolationException;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.RestControllerAdvice;
+import lombok.Getter;
 
-import java.util.stream.Collectors;
+@Getter
+public class PviValidationException extends RuntimeException {
 
-@RestControllerAdvice(basePackages = "com.bnpparibas.dsibddf.a100919.fis.exposition.api.pvi")
-public class PviExceptionHandler {
+    private final String field;
+    private final String code;
 
-    @ExceptionHandler(PviValidationException.class)
-    public ResponseEntity<ErrorModel> handlePviValidation(PviValidationException ex) {
-        ErrorModel error = ErrorModel.builder()
-                .code(ex.getCode())
-                .message(ex.getField() + " : " + ex.getMessage())
-                .build();
-
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+    public PviValidationException(String field, String message) {
+        this(field, "PVI-400-VALIDATION", message);
     }
 
-    // @Valid on @RequestBody (standard bean validation)
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ErrorModel> handleMethodArgumentNotValid(MethodArgumentNotValidException ex) {
-        String message = ex.getBindingResult()
-                .getFieldErrors()
-                .stream()
-                .map(err -> err.getField() + " : " + err.getDefaultMessage())
-                .collect(Collectors.joining(", "));
-
-        ErrorModel error = ErrorModel.builder()
-                .code("PVI-400-VALIDATION")
-                .message(message)
-                .build();
-
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
-    }
-
-    // Validation on params/headers/etc.
-    @ExceptionHandler(ConstraintViolationException.class)
-    public ResponseEntity<ErrorModel> handleConstraintViolation(ConstraintViolationException ex) {
-        ErrorModel error = ErrorModel.builder()
-                .code("PVI-400-VALIDATION")
-                .message(ex.getMessage())
-                .build();
-
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
-    }
-
-    /**
-     * ✅ THIS is what fixes your "No enum constant" / wrong enum value test.
-     * When you send an invalid enum string in JSON, Jackson fails BEFORE @Valid,
-     * and Spring raises HttpMessageNotReadableException (often with InvalidFormatException).
-     */
-    @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<ErrorModel> handleNotReadable(HttpMessageNotReadableException ex) {
-        String msg = "Malformed JSON request";
-
-        Throwable cause = ex.getCause();
-        if (cause instanceof InvalidFormatException ife) {
-            String field = (ife.getPath() != null && !ife.getPath().isEmpty())
-                    ? ife.getPath().get(0).getFieldName()
-                    : "request";
-
-            msg = field + " : invalid value";
-        }
-
-        ErrorModel error = ErrorModel.builder()
-                .code("PVI-400-REQUEST")
-                .message(msg)
-                .build();
-
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+    public PviValidationException(String field, String code, String message) {
+        super(message);
+        this.field = field;
+        this.code = code;
     }
 }
