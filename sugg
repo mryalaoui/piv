@@ -1,10 +1,10 @@
 package com.bnpparibas.dsibddf.simulator.common.suggestion;
 
-import java.util.Map;
+public interface SuggestionContextResolver<C> {
 
-public record SuggestionItem(
-        String category,
-        String value,   // code ou texte
-        String url,
-        Map<String, Object> condition
-) {}
+    /**
+     * Résout une variable métier (ex: "grossCapitalGain")
+     * à partir du contexte du simulateur.
+     */
+    Object resolve(String variableName, C context);
+}
