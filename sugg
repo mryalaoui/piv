@@ -1,117 +1,68 @@
-package com.bnpparibas.dsibddf.a100919.fis.domain.common.suggestion;
+package com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo;
 
-import com.bnpparibas.dsibddf.a100919.fis.domain.pvi.model.vo.SuggestionVO;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 
-import java.security.SecureRandom;
-import java.util.*;
+import java.math.BigDecimal;
 
-public class GenericSuggestionEngine<C> {
+import static org.assertj.core.api.Assertions.assertThat;
 
-    private final List<SuggestionVO> suggestions;
-    private final int maxSuggestions;
-    private final SuggestionContextResolver<C> resolver;
-    private final SecureRandom random = new SecureRandom();
+@SpringBootTest
+@EnableConfigurationProperties(PviBusinessPropertiesVO.class)
+@ActiveProfiles("pvi-test")
+class PviBusinessPropertiesVOTest {
 
-    public GenericSuggestionEngine(
-            List<SuggestionVO> suggestions,
-            int maxSuggestions,
-            SuggestionContextResolver<C> resolver
-    ) {
-        this.suggestions = suggestions;
-        this.maxSuggestions = maxSuggestions;
-        this.resolver = resolver;
+    @Autowired
+    private PviBusinessPropertiesVO properties;
+
+    @Test
+    void shouldBindDeductionsByYearFromYaml() {
+        assertThat(properties.getDeductionsByYear()).isNotNull();
+        assertThat(properties.getDeductionsByYear()).containsKey(10);
+
+        DeductionYearVO year10 = properties.getDeductionsByYear().get(10);
+
+        assertThat(year10.IR().tauxAnnuel()).isEqualByComparingTo("6");
+        assertThat(year10.IR().tauxAbattementGlobal()).isEqualByComparingTo("30");
+
+        assertThat(year10.PS().tauxAnnuel()).isEqualByComparingTo("1.65");
+        assertThat(year10.PS().tauxAbattementGlobal()).isEqualByComparingTo("8.25");
     }
 
-    public List<SuggestionVO> computeSuggestions(C context) {
-        if (maxSuggestions <= 0 || suggestions.isEmpty()) {
-            return List.of();
-        }
+    @Test
+    void shouldBindCapitalGainSurtaxBracketsFromYaml() {
+        assertThat(properties.getCapitalGainSurtaxBrackets()).hasSize(1);
 
-        Map<String, List<SuggestionVO>> eligibleByCategory = new LinkedHashMap<>();
+        CapitalGainTaxBracketVO bracket =
+                properties.getCapitalGainSurtaxBrackets().get(0);
 
-        for (SuggestionVO s : suggestions) {
-            if (s.condition() == null || evalCondition(s.condition(), context)) {
-                eligibleByCategory
-                        .computeIfAbsent(s.category(), k -> new ArrayList<>())
-                        .add(s);
-            }
-        }
-
-        return pickSuggestions(eligibleByCategory);
+        assertThat(bracket.min()).isEqualByComparingTo("50001");
+        assertThat(bracket.max()).isEqualByComparingTo("60000");
+        assertThat(bracket.pourcentagePlusValue()).isEqualByComparingTo("2");
+        assertThat(bracket.rapport()).isEqualByComparingTo("0.05");
     }
 
-    // ===================== PRIVATE =====================
+    @Test
+    void shouldBindSuggestionsFromYaml() {
+        assertThat(properties.getSuggestion()).isNotNull();
+        assertThat(properties.getSuggestion().getShow()).isEqualTo(4);
 
-    private List<SuggestionVO> pickSuggestions(Map<String, List<SuggestionVO>> eligibleByCategory) {
-        List<SuggestionVO> selected = new ArrayList<>();
-        List<SuggestionVO> leftovers = new ArrayList<>();
+        assertThat(properties.getSuggestion().getSuggestions())
+                .containsKey("fiscal");
 
-        for (List<SuggestionVO> perCategory : eligibleByCategory.values()) {
-            if (perCategory.isEmpty()) continue;
+        SuggestionVO suggestion =
+                properties.getSuggestion()
+                        .getSuggestions()
+                        .get("fiscal")
+                        .get(0);
 
-            int idx = random.nextInt(perCategory.size());
-            selected.add(perCategory.get(idx));
+        assertThat(suggestion.category()).isEqualTo("fiscal");
+        assertThat(suggestion.code()).isEqualTo("PVI_SUGG_FISCAL_01");
 
-            for (int i = 0; i < perCategory.size(); i++) {
-                if (i != idx) {
-                    leftovers.add(perCategory.get(i));
-                }
-            }
-        }
-
-        while (selected.size() < maxSuggestions && !leftovers.isEmpty()) {
-            selected.add(leftovers.remove(random.nextInt(leftovers.size())));
-        }
-
-        return selected;
-    }
-
-    @SuppressWarnings("unchecked")
-    private boolean evalCondition(Map<String, Object> node, C context) {
-        if (node == null || node.isEmpty()) return true;
-
-        Object part1Obj = node.get("part1");
-        Object opObj = node.get("operator");
-        Object part2Obj = node.get("part2");
-
-        if (part1Obj == null || opObj == null || part2Obj == null) return true;
-
-        String op = String.valueOf(opObj);
-
-        // Condition composée
-        if (part1Obj instanceof Map<?, ?> leftMap
-                && leftMap.containsKey("part1")
-                && leftMap.containsKey("operator")) {
-
-            boolean left = evalCondition((Map<String, Object>) part1Obj, context);
-            boolean right = evalCondition((Map<String, Object>) part2Obj, context);
-
-            return "||".equals(op) ? left || right
-                 : "&&".equals(op) && left && right;
-        }
-
-        Object leftValue = resolver.resolve(String.valueOf(part1Obj), context);
-        String rightRaw = String.valueOf(part2Obj);
-
-        return switch (op) {
-            case "==" -> compareEquals(leftValue, rightRaw);
-            case ">"  -> compareGreater(leftValue, rightRaw);
-            case "<"  -> compareLess(leftValue, rightRaw);
-            default   -> false;
-        };
-    }
-
-    private boolean compareEquals(Object left, String rightRaw) {
-        return left != null && left.toString().equalsIgnoreCase(rightRaw);
-    }
-
-    private boolean compareGreater(Object left, String rightRaw) {
-        return left instanceof Number n
-                && Double.parseDouble(rightRaw) < n.doubleValue();
-    }
-
-    private boolean compareLess(Object left, String rightRaw) {
-        return left instanceof Number n
-                && Double.parseDouble(rightRaw) > n.doubleValue();
+        assertThat(suggestion.condition()).isNotNull();
+        assertThat(suggestion.condition().get("operator")).isEqualTo(">");
     }
 }
