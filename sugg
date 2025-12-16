@@ -1,53 +1,18 @@
-package com.bnpparibas.fis.ifi.exposition.mapper;
+@RestController
+@RequestMapping("/api/ifi")
+@RequiredArgsConstructor
+public class IfiController {
 
-import com.bnpparibas.fis.ifi.domain.model.IfiInputData;
-import com.bnpparibas.fis.ifi.domain.model.IfiResult;
-import com.bnpparibas.fis.ifi.exposition.dto.IfiSimulationRequestDto;
-import com.bnpparibas.fis.ifi.exposition.dto.IfiSimulationResponseDto;
-import org.mapstruct.*;
+    private final IfiSimulationService service;
+    private final IfiMapper mapper;
 
-@Mapper(
-    componentModel = "spring",
-    unmappedTargetPolicy = ReportingPolicy.ERROR,
-    nullValueCheckStrategy = NullValueCheckStrategy.ALWAYS
-)
-public interface IfiMapper {
+    @PostMapping("/simulate")
+    public IfiSimulationResponseDto simulate(
+            @RequestBody IfiSimulationRequestDto request) {
 
-    // ==========================
-    // REQUEST → DOMAIN
-    // ==========================
+        var domainInput = mapper.toDomain(request);
+        var result = service.simulate(domainInput);
 
-    IfiInputData toDomain(IfiSimulationRequestDto dto);
-
-    IfiInputData.Actif toActif(IfiSimulationRequestDto.Actif dto);
-
-    IfiInputData.Actif.Immobilier toImmobilier(IfiSimulationRequestDto.Immobilier dto);
-
-    IfiInputData.Actif.Immobilier.RP toRp(IfiSimulationRequestDto.Rp dto);
-
-    IfiInputData.Actif.Immobilier.Locatif toLocatif(IfiSimulationRequestDto.Locatif dto);
-
-    IfiInputData.Actif.Biens toBiens(IfiSimulationRequestDto.Biens dto);
-
-    IfiInputData.Actif.Biens.Bois toBois(IfiSimulationRequestDto.Bois dto);
-
-    IfiInputData.Actif.Biens.Ruraux toRuraux(IfiSimulationRequestDto.Ruraux dto);
-
-    IfiInputData.Passif toPassif(IfiSimulationRequestDto.Passif dto);
-
-    IfiInputData.Reduc toReduc(IfiSimulationRequestDto.Reduc dto);
-
-    IfiInputData.Reduc.Invest toInvest(IfiSimulationRequestDto.Invest dto);
-
-    IfiInputData.Reduc.Don toDon(IfiSimulationRequestDto.Don dto);
-
-    // ==========================
-    // DOMAIN → RESPONSE
-    // ==========================
-
-    @Mapping(target = "ifi.theorique", source = "ifi.theorique")
-    @Mapping(target = "ifi.avantReduc", source = "ifi.avantReduc")
-    @Mapping(target = "ifi.aPayer", source = "ifi.aPayer")
-    IfiSimulationResponseDto toDto(IfiResult domain);
-
+        return mapper.toDto(result);
+    }
 }
