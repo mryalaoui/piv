@@ -1,60 +1,1203 @@
-@ExceptionHandler(MethodArgumentNotValidException.class)
-@ResponseBody
-public ResponseEntity<Object> handleMethodArgumentNotValid(final MethodArgumentNotValidException ex) {
+Je peux te donner un code source Spring Boot complet “socle” (domain + exposition) qui reproduit le même enchaînement métier que ton PHP (actif/passif/réduc → actifNet → IFI → message/stackBar → suggestions), mais je ne peux pas te donner “tout le projet final” d’un coup (trop volumineux + il manque encore des éléments non fournis comme tout le JSON “steps” complet, templates, l’intégration front, etc.).
 
-    // Collect all errors in a readable way
-    final var errors = new ArrayList<String>();
+Du coup je te livre maintenant un simulateur IFI complet côté back, structuré comme PVI (domain / exposition), avec :
 
-    // Dynamic code: by default, keep a generic one, then try to infer from violations
-    String dynamicCode = "400-VALIDATION";
-    String simulatorFromFirstError = null;
+toutes les classes “métier” (calculs, modèles, suggestions, stackbar),
 
-    for (final FieldError error : ex.getBindingResult().getFieldErrors()) {
+la config YAML (bareme + suggestions + paramètres),
 
-        // Our format is: <SIM>|<CODE>|<MESSAGE>
-        String raw = error.getDefaultMessage();
+un controller REST (exposition) qui appelle le domain.
 
-        String sim = null;
-        String businessCode = null;
-        String msg = raw;
+Tu pourras ensuite me donner les autres fichiers (steps complets, autres règles UI) et on complètera.
 
-        if (raw != null) {
-            String[] parts = raw.split("\\|", 3);
-            if (parts.length == 3) {
-                sim = parts[0];
-                businessCode = parts[1];
-                msg = parts[2];
+1) Arborescence (comme PVI)
+ifi/
+  ifi-domain/
+    src/main/java/com/bnpparibas/fis/ifi/domain/
+      config/
+        IfiBusinessProperties.java
+      model/
+        IfiRequest.java
+        IfiInputData.java
+        IfiResult.java
+        IfiTaxResult.java
+        StackBarResult.java
+        Suggestion.java
+        Condition.java
+      service/
+        IfiSimulationService.java
+        calculator/
+          PatrimoineCalculator.java
+          PassifCalculator.java
+          ReductionCalculator.java
+          IfiTaxCalculator.java
+          StackBarCalculator.java
+        suggestion/
+          SuggestionEngine.java
+          ConditionEvaluator.java
+  ifi-exposition/
+    src/main/java/com/bnpparibas/fis/ifi/exposition/
+      IfiApplication.java
+      controller/
+        IfiController.java
+      dto/
+        IfiSimulationRequestDto.java
+        IfiSimulationResponseDto.java
+        Mapper.java
+
+2) application.yaml (bloc unique ifi)
+ifi:
+  bareme:
+    dr454: 1400000
+    dr455: 17500
+    dr456: 1.25
+    tranches:
+      - min: 0
+        max: 800000
+        taux: 0
+        montant: 0
+      - min: 800000
+        max: 1300000
+        taux: 0.5
+        montant: 4000
+      - min: 1300000
+        max: 2570000
+        taux: 0.7
+        montant: 6600
+      - min: 2570000
+        max: 5000000
+        taux: 1
+        montant: 14310
+      - min: 5000000
+        max: 10000000
+        taux: 1.25
+        montant: 26810
+      - min: 10000000
+        max: null
+        taux: 1.5
+        montant: 51810
+
+  constants:
+    seuilImposition: 1300000
+    abattementResidencePrincipalePct: 30
+    abattementBoisPct: 75
+    rurauxSeuil: 101897
+    abattementRurauxSousSeuilPct: 75
+    abattementRurauxAuDelaPct: 50
+    reducMaxDonsSeuls: 50000
+    reducMaxAutre: 45000
+    reducTauxInvestPme: 0.50
+    reducMaxInvestPme: 45000
+    reducTauxFipFcpi: 0.50
+    reducMaxFipFcpi: 18000
+    reducTauxDons: 0.75
+    reducMaxDons: 50000
+
+  suggestions:
+    show: 4
+    themes:
+      systematique1:
+        - value: "Connaissez-vous la composition spécifique du foyer fiscal IFI ?"
+      systematique2:
+        - value: "Vous devez reporter le montant de la valeur brute et de la valeur nette taxable de votre patrimoine sur votre déclaration..."
+          url: "/impot-sur-la-fortune-immobiliere#declare-paie-ifi"
+          condition:
+            part1: "actifNet"
+            operator: ">"
+            part2: 1300000
+      aleatoire:
+        - value: "Savez-vous que l'abattement de 30 % sur la résidence principale n'est pas applicable en cas de détention via une SCI ?"
+          url: "/impot-sur-la-fortune-immobiliere#fonction-abattement"
+          condition:
+            part1: "actif.immobilier.RP.saisi"
+            operator: ">"
+            part2: 0
+        - value: "L'impôt sur le revenu, les prélèvements sociaux et les dettes non immobilières ne sont pas déductibles."
+          condition:
+            part1: "passif.total"
+            operator: ">"
+            part2: 0
+        - value: "Réduction IFI : dons..."
+          url: "/impot-sur-la-fortune-immobiliere#comment-reduire-ifi"
+          condition:
+            part1: "reduc.dons.saisi"
+            operator: ">"
+            part2: 0
+
+3) Code domain (complet)
+3.1 IfiBusinessProperties.java
+package com.bnpparibas.fis.ifi.domain.config;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
+
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
+
+@Validated
+@ConfigurationProperties(prefix = "ifi")
+public class IfiBusinessProperties {
+
+    private Bareme bareme = new Bareme();
+    private Constants constants = new Constants();
+    private Suggestions suggestions = new Suggestions();
+
+    public Bareme getBareme() { return bareme; }
+    public void setBareme(Bareme bareme) { this.bareme = bareme; }
+
+    public Constants getConstants() { return constants; }
+    public void setConstants(Constants constants) { this.constants = constants; }
+
+    public Suggestions getSuggestions() { return suggestions; }
+    public void setSuggestions(Suggestions suggestions) { this.suggestions = suggestions; }
+
+    public static class Bareme {
+        private BigDecimal dr454 = BigDecimal.ZERO;
+        private BigDecimal dr455 = BigDecimal.ZERO;
+        private BigDecimal dr456 = BigDecimal.ZERO;
+        private List<Tranche> tranches = new ArrayList<>();
+
+        public BigDecimal getDr454() { return dr454; }
+        public void setDr454(BigDecimal dr454) { this.dr454 = dr454; }
+
+        public BigDecimal getDr455() { return dr455; }
+        public void setDr455(BigDecimal dr455) { this.dr455 = dr455; }
+
+        public BigDecimal getDr456() { return dr456; }
+        public void setDr456(BigDecimal dr456) { this.dr456 = dr456; }
+
+        public List<Tranche> getTranches() { return tranches; }
+        public void setTranches(List<Tranche> tranches) { this.tranches = tranches; }
+    }
+
+    public static class Tranche {
+        private BigDecimal min;
+        private BigDecimal max; // null => no upper bound
+        private BigDecimal taux; // percent
+        private BigDecimal montant;
+
+        public BigDecimal getMin() { return min; }
+        public void setMin(BigDecimal min) { this.min = min; }
+
+        public BigDecimal getMax() { return max; }
+        public void setMax(BigDecimal max) { this.max = max; }
+
+        public BigDecimal getTaux() { return taux; }
+        public void setTaux(BigDecimal taux) { this.taux = taux; }
+
+        public BigDecimal getMontant() { return montant; }
+        public void setMontant(BigDecimal montant) { this.montant = montant; }
+    }
+
+    public static class Constants {
+        private BigDecimal seuilImposition = new BigDecimal("1300000");
+        private BigDecimal abattementResidencePrincipalePct = new BigDecimal("30");
+        private BigDecimal abattementBoisPct = new BigDecimal("75");
+
+        private BigDecimal rurauxSeuil = new BigDecimal("101897");
+        private BigDecimal abattementRurauxSousSeuilPct = new BigDecimal("75");
+        private BigDecimal abattementRurauxAuDelaPct = new BigDecimal("50");
+
+        private BigDecimal reducMaxDonsSeuls = new BigDecimal("50000");
+        private BigDecimal reducMaxAutre = new BigDecimal("45000");
+
+        private BigDecimal reducTauxInvestPme = new BigDecimal("0.50");
+        private BigDecimal reducMaxInvestPme = new BigDecimal("45000");
+
+        private BigDecimal reducTauxFipFcpi = new BigDecimal("0.50");
+        private BigDecimal reducMaxFipFcpi = new BigDecimal("18000");
+
+        private BigDecimal reducTauxDons = new BigDecimal("0.75");
+        private BigDecimal reducMaxDons = new BigDecimal("50000");
+
+        public BigDecimal getSeuilImposition() { return seuilImposition; }
+        public void setSeuilImposition(BigDecimal v) { this.seuilImposition = v; }
+
+        public BigDecimal getAbattementResidencePrincipalePct() { return abattementResidencePrincipalePct; }
+        public void setAbattementResidencePrincipalePct(BigDecimal v) { this.abattementResidencePrincipalePct = v; }
+
+        public BigDecimal getAbattementBoisPct() { return abattementBoisPct; }
+        public void setAbattementBoisPct(BigDecimal v) { this.abattementBoisPct = v; }
+
+        public BigDecimal getRurauxSeuil() { return rurauxSeuil; }
+        public void setRurauxSeuil(BigDecimal v) { this.rurauxSeuil = v; }
+
+        public BigDecimal getAbattementRurauxSousSeuilPct() { return abattementRurauxSousSeuilPct; }
+        public void setAbattementRurauxSousSeuilPct(BigDecimal v) { this.abattementRurauxSousSeuilPct = v; }
+
+        public BigDecimal getAbattementRurauxAuDelaPct() { return abattementRurauxAuDelaPct; }
+        public void setAbattementRurauxAuDelaPct(BigDecimal v) { this.abattementRurauxAuDelaPct = v; }
+
+        public BigDecimal getReducMaxDonsSeuls() { return reducMaxDonsSeuls; }
+        public void setReducMaxDonsSeuls(BigDecimal v) { this.reducMaxDonsSeuls = v; }
+
+        public BigDecimal getReducMaxAutre() { return reducMaxAutre; }
+        public void setReducMaxAutre(BigDecimal v) { this.reducMaxAutre = v; }
+
+        public BigDecimal getReducTauxInvestPme() { return reducTauxInvestPme; }
+        public void setReducTauxInvestPme(BigDecimal v) { this.reducTauxInvestPme = v; }
+
+        public BigDecimal getReducMaxInvestPme() { return reducMaxInvestPme; }
+        public void setReducMaxInvestPme(BigDecimal v) { this.reducMaxInvestPme = v; }
+
+        public BigDecimal getReducTauxFipFcpi() { return reducTauxFipFcpi; }
+        public void setReducTauxFipFcpi(BigDecimal v) { this.reducTauxFipFcpi = v; }
+
+        public BigDecimal getReducMaxFipFcpi() { return reducMaxFipFcpi; }
+        public void setReducMaxFipFcpi(BigDecimal v) { this.reducMaxFipFcpi = v; }
+
+        public BigDecimal getReducTauxDons() { return reducTauxDons; }
+        public void setReducTauxDons(BigDecimal v) { this.reducTauxDons = v; }
+
+        public BigDecimal getReducMaxDons() { return reducMaxDons; }
+        public void setReducMaxDons(BigDecimal v) { this.reducMaxDons = v; }
+    }
+
+    public static class Suggestions {
+        private int show = 0;
+        private Themes themes = new Themes();
+
+        public int getShow() { return show; }
+        public void setShow(int show) { this.show = show; }
+
+        public Themes getThemes() { return themes; }
+        public void setThemes(Themes themes) { this.themes = themes; }
+
+        public static class Themes {
+            private List<com.bnpparibas.fis.ifi.domain.model.Suggestion> systematique1 = new ArrayList<>();
+            private List<com.bnpparibas.fis.ifi.domain.model.Suggestion> systematique2 = new ArrayList<>();
+            private List<com.bnpparibas.fis.ifi.domain.model.Suggestion> aleatoire = new ArrayList<>();
+
+            public List<com.bnpparibas.fis.ifi.domain.model.Suggestion> getSystematique1() { return systematique1; }
+            public void setSystematique1(List<com.bnpparibas.fis.ifi.domain.model.Suggestion> v) { this.systematique1 = v; }
+
+            public List<com.bnpparibas.fis.ifi.domain.model.Suggestion> getSystematique2() { return systematique2; }
+            public void setSystematique2(List<com.bnpparibas.fis.ifi.domain.model.Suggestion> v) { this.systematique2 = v; }
+
+            public List<com.bnpparibas.fis.ifi.domain.model.Suggestion> getAleatoire() { return aleatoire; }
+            public void setAleatoire(List<com.bnpparibas.fis.ifi.domain.model.Suggestion> v) { this.aleatoire = v; }
+        }
+    }
+}
+
+3.2 Modèles (IfiRequest / Input / Result)
+package com.bnpparibas.fis.ifi.domain.model;
+
+import java.math.BigDecimal;
+import java.util.Map;
+
+public record IfiRequest(IfiInputData data) {}
+
+public record IfiInputData(
+        Actif actif,
+        Passif passif,
+        Reduc reduc
+) {
+    public record Actif(
+            String details, // "oui" / "non"
+            BigDecimal total,
+            Immobilier immobilier,
+            Biens biens
+    ) {
+        public record Immobilier(
+                RP rp,
+                Locatif locatif,
+                BigDecimal autre
+        ) {
+            public record RP(BigDecimal saisi) {}
+            public record Locatif(
+                    String details, // "oui"/"non"
+                    BigDecimal total,
+                    Map<String, BigDecimal> detailValues // direct, comNoExo, partsSociete, asscap...
+            ) {}
+        }
+        public record Biens(
+                Bois bois,
+                Ruraux ruraux
+        ) {
+            public record Bois(BigDecimal saisi) {}
+            public record Ruraux(BigDecimal saisi) {}
+        }
+    }
+
+    public record Passif(
+            String details, // "oui"/"non"
+            BigDecimal total,
+            BigDecimal taxesFoncieres,
+            BigDecimal dettesImmobilieres
+    ) {}
+
+    public record Reduc(
+            String details, // "oui"/"non"
+            BigDecimal total,
+            Invest investPme,
+            Invest fipFcpi,
+            Don dons
+    ) {
+        public record Invest(BigDecimal saisi) {}
+        public record Don(BigDecimal saisi) {}
+    }
+}
+
+package com.bnpparibas.fis.ifi.domain.model;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
+
+public record IfiResult(
+        BigDecimal actifNet,
+        IfiTaxResult ifi,
+        BigDecimal tauxImpots,
+        String message,
+        Map<String, StackBarResult> stackBar,
+        List<Suggestion> suggestions
+) {}
+
+public record IfiTaxResult(
+        BigDecimal theorique,
+        BigDecimal avantReduc,
+        BigDecimal aPayer
+) {}
+
+public record StackBarResult(
+        BigDecimal trancheConsommee,
+        BigDecimal trancheNonConsommee
+) {}
+
+3.3 Suggestion + Condition
+package com.bnpparibas.fis.ifi.domain.model;
+
+public class Suggestion {
+    private String value;
+    private String url; // optional
+    private Condition condition; // optional
+    private String theme; // filled at runtime
+
+    public String getValue() { return value; }
+    public void setValue(String value) { this.value = value; }
+
+    public String getUrl() { return url; }
+    public void setUrl(String url) { this.url = url; }
+
+    public Condition getCondition() { return condition; }
+    public void setCondition(Condition condition) { this.condition = condition; }
+
+    public String getTheme() { return theme; }
+    public void setTheme(String theme) { this.theme = theme; }
+}
+
+package com.bnpparibas.fis.ifi.domain.model;
+
+public class Condition {
+    private Object part1;     // String or Condition
+    private String operator;  // ">", "<", "==", "||", "&&"
+    private Object part2;     // number/string or Condition
+
+    public Object getPart1() { return part1; }
+    public void setPart1(Object part1) { this.part1 = part1; }
+
+    public String getOperator() { return operator; }
+    public void setOperator(String operator) { this.operator = operator; }
+
+    public Object getPart2() { return part2; }
+    public void setPart2(Object part2) { this.part2 = part2; }
+}
+
+3.4 Calculators
+package com.bnpparibas.fis.ifi.domain.service.calculator;
+
+import com.bnpparibas.fis.ifi.domain.config.IfiBusinessProperties;
+import com.bnpparibas.fis.ifi.domain.model.IfiInputData;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.Map;
+
+import static java.util.Objects.requireNonNullElse;
+
+public class PatrimoineCalculator {
+
+    private final IfiBusinessProperties props;
+
+    public PatrimoineCalculator(IfiBusinessProperties props) {
+        this.props = props;
+    }
+
+    public BigDecimal computePatrimoine(IfiInputData.Actif actif) {
+        if (!"oui".equalsIgnoreCase(requireNonNullElse(actif.details(), "non"))) {
+            return nz(actif.total());
+        }
+
+        BigDecimal rp = computeResidencePrincipale(actif);
+        BigDecimal autre = nz(actif.immobilier() != null ? actif.immobilier().autre() : null);
+        BigDecimal locatif = computeLocatif(actif);
+        BigDecimal bois = computeBois(actif);
+        BigDecimal ruraux = computeRuraux(actif);
+
+        return rp.add(autre).add(locatif).add(bois).add(ruraux);
+    }
+
+    private BigDecimal computeResidencePrincipale(IfiInputData.Actif actif) {
+        BigDecimal saisi = nz(actif.immobilier() != null && actif.immobilier().rp() != null ? actif.immobilier().rp().saisi() : null);
+        BigDecimal abattPct = props.getConstants().getAbattementResidencePrincipalePct();
+        return saisi.multiply(BigDecimal.ONE.subtract(abattPct.divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP)));
+    }
+
+    private BigDecimal computeLocatif(IfiInputData.Actif actif) {
+        var locatif = actif.immobilier() != null ? actif.immobilier().locatif() : null;
+        if (locatif == null) return BigDecimal.ZERO;
+
+        if ("oui".equalsIgnoreCase(requireNonNullElse(locatif.details(), "non"))) {
+            Map<String, BigDecimal> m = requireNonNullElse(locatif.detailValues(), Map.of());
+            return m.values().stream().map(this::nz).reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
+        return nz(locatif.total());
+    }
+
+    private BigDecimal computeBois(IfiInputData.Actif actif) {
+        BigDecimal saisi = nz(actif.biens() != null && actif.biens().bois() != null ? actif.biens().bois().saisi() : null);
+        BigDecimal abattPct = props.getConstants().getAbattementBoisPct();
+        return saisi.multiply(BigDecimal.ONE.subtract(abattPct.divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP)));
+    }
+
+    private BigDecimal computeRuraux(IfiInputData.Actif actif) {
+        BigDecimal saisi = nz(actif.biens() != null && actif.biens().ruraux() != null ? actif.biens().ruraux().saisi() : null);
+
+        BigDecimal seuil = props.getConstants().getRurauxSeuil();
+        BigDecimal pctSous = props.getConstants().getAbattementRurauxSousSeuilPct().divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP);
+        BigDecimal pctAuDela = props.getConstants().getAbattementRurauxAuDelaPct().divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP);
+
+        if (saisi.compareTo(seuil) < 0) {
+            return saisi.multiply(BigDecimal.ONE.subtract(pctSous));
+        }
+        BigDecimal part1 = seuil.multiply(BigDecimal.ONE.subtract(pctSous));
+        BigDecimal part2 = saisi.subtract(seuil).multiply(BigDecimal.ONE.subtract(pctAuDela));
+        return part1.add(part2);
+    }
+
+    private BigDecimal nz(BigDecimal v) { return v == null ? BigDecimal.ZERO : v; }
+}
+
+package com.bnpparibas.fis.ifi.domain.service.calculator;
+
+import com.bnpparibas.fis.ifi.domain.model.IfiInputData;
+
+import java.math.BigDecimal;
+
+import static java.util.Objects.requireNonNullElse;
+
+public class PassifCalculator {
+
+    public BigDecimal computePassif(IfiInputData.Passif passif) {
+        if (!"oui".equalsIgnoreCase(requireNonNullElse(passif.details(), "non"))) {
+            return nz(passif.total());
+        }
+        return nz(passif.taxesFoncieres()).add(nz(passif.dettesImmobilieres()));
+    }
+
+    private BigDecimal nz(BigDecimal v) { return v == null ? BigDecimal.ZERO : v; }
+}
+
+package com.bnpparibas.fis.ifi.domain.service.calculator;
+
+import com.bnpparibas.fis.ifi.domain.config.IfiBusinessProperties;
+import com.bnpparibas.fis.ifi.domain.model.IfiInputData;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
+import static java.util.Objects.requireNonNullElse;
+
+public class ReductionCalculator {
+
+    private final IfiBusinessProperties props;
+
+    public ReductionCalculator(IfiBusinessProperties props) {
+        this.props = props;
+    }
+
+    public BigDecimal computeReduction(IfiInputData.Reduc reduc) {
+        if (reduc == null) return BigDecimal.ZERO;
+
+        if (!"oui".equalsIgnoreCase(requireNonNullElse(reduc.details(), "non"))) {
+            return min(nz(reduc.total()), props.getConstants().getReducMaxDonsSeuls()); // PHP: min(total, 50000)
+        }
+
+        BigDecimal investPme = computeInvestPme(reduc);
+        BigDecimal fipFcpi = computeFipFcpi(reduc);
+        BigDecimal dons = computeDons(reduc);
+
+        BigDecimal sum = investPme.add(fipFcpi).add(dons);
+        BigDecimal max = getMaxReduction(dons, investPme, fipFcpi);
+
+        return min(sum, max);
+    }
+
+    private BigDecimal getMaxReduction(BigDecimal dons, BigDecimal investPme, BigDecimal fipFcpi) {
+        boolean donsSeuls = dons.compareTo(BigDecimal.ZERO) > 0
+                && investPme.compareTo(BigDecimal.ZERO) == 0
+                && fipFcpi.compareTo(BigDecimal.ZERO) == 0;
+
+        return donsSeuls ? props.getConstants().getReducMaxDonsSeuls() : props.getConstants().getReducMaxAutre();
+    }
+
+    private BigDecimal computeInvestPme(IfiInputData.Reduc reduc) {
+        BigDecimal saisi = nz(reduc.investPme() != null ? reduc.investPme().saisi() : null);
+        BigDecimal calc = saisi.multiply(props.getConstants().getReducTauxInvestPme());
+        return min(calc, props.getConstants().getReducMaxInvestPme());
+    }
+
+    private BigDecimal computeFipFcpi(IfiInputData.Reduc reduc) {
+        BigDecimal saisi = nz(reduc.fipFcpi() != null ? reduc.fipFcpi().saisi() : null);
+        BigDecimal calc = saisi.multiply(props.getConstants().getReducTauxFipFcpi());
+        return min(calc, props.getConstants().getReducMaxFipFcpi());
+    }
+
+    private BigDecimal computeDons(IfiInputData.Reduc reduc) {
+        BigDecimal saisi = nz(reduc.dons() != null ? reduc.dons().saisi() : null);
+        BigDecimal calc = saisi.multiply(props.getConstants().getReducTauxDons()).setScale(2, RoundingMode.HALF_UP);
+        return min(calc, props.getConstants().getReducMaxDons());
+    }
+
+    private BigDecimal min(BigDecimal a, BigDecimal b) { return a.compareTo(b) <= 0 ? a : b; }
+    private BigDecimal nz(BigDecimal v) { return v == null ? BigDecimal.ZERO : v; }
+}
+
+package com.bnpparibas.fis.ifi.domain.service.calculator;
+
+import com.bnpparibas.fis.ifi.domain.config.IfiBusinessProperties;
+import com.bnpparibas.fis.ifi.domain.model.IfiTaxResult;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.List;
+
+public class IfiTaxCalculator {
+
+    private final IfiBusinessProperties props;
+
+    public IfiTaxCalculator(IfiBusinessProperties props) {
+        this.props = props;
+    }
+
+    public IfiTaxResult computeIfi(BigDecimal actifNet, BigDecimal reduc) {
+        BigDecimal isfTheorique = computeIsfTheorique(actifNet, reduc);
+
+        BigDecimal ifiAvantReduc = computeIsfTheorique(actifNet.subtract(isfTheorique), BigDecimal.ZERO);
+
+        BigDecimal aPayer = ifiAvantReduc.subtract(nz(reduc));
+        if (aPayer.compareTo(BigDecimal.ZERO) < 0) aPayer = BigDecimal.ZERO;
+
+        return new IfiTaxResult(isfTheorique, ifiAvantReduc, aPayer);
+    }
+
+    public BigDecimal computeIsfTheorique(BigDecimal actifNet, BigDecimal reduc) {
+        BigDecimal seuil = props.getConstants().getSeuilImposition();
+        if (actifNet.compareTo(seuil) < 0) return BigDecimal.ZERO;
+
+        IfiBusinessProperties.Tranche tranche = findTranche(props.getBareme().getTranches(), actifNet);
+        if (tranche == null) return BigDecimal.ZERO;
+
+        BigDecimal taux = nz(tranche.getTaux()).divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP);
+
+        BigDecimal isf = actifNet.multiply(taux)
+                .subtract(nz(tranche.getMontant()))
+                .subtract(nz(reduc));
+
+        // décote
+        BigDecimal dr454 = props.getBareme().getDr454();
+        if (actifNet.compareTo(dr454) <= 0) {
+            BigDecimal dr455 = props.getBareme().getDr455();
+            BigDecimal dr456 = props.getBareme().getDr456().divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP);
+            BigDecimal decote = dr455.subtract(actifNet.multiply(dr456));
+            isf = isf.subtract(decote);
+        }
+
+        if (isf.compareTo(BigDecimal.ZERO) < 0) return BigDecimal.ZERO;
+        return isf;
+    }
+
+    private IfiBusinessProperties.Tranche findTranche(List<IfiBusinessProperties.Tranche> tranches, BigDecimal value) {
+        for (var t : tranches) {
+            BigDecimal min = nz(t.getMin());
+            BigDecimal max = t.getMax(); // null => open ended
+            boolean inRange = (max != null)
+                    ? (value.compareTo(min) >= 0 && value.compareTo(max) < 0)
+                    : (value.compareTo(min) >= 0);
+            if (inRange) return t;
+        }
+        return null;
+    }
+
+    private BigDecimal nz(BigDecimal v) { return v == null ? BigDecimal.ZERO : v; }
+}
+
+package com.bnpparibas.fis.ifi.domain.service.calculator;
+
+import com.bnpparibas.fis.ifi.domain.config.IfiBusinessProperties;
+import com.bnpparibas.fis.ifi.domain.model.StackBarResult;
+
+import java.math.BigDecimal;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+public class StackBarCalculator {
+
+    private final IfiBusinessProperties props;
+
+    public StackBarCalculator(IfiBusinessProperties props) {
+        this.props = props;
+    }
+
+    public Map<String, StackBarResult> compute(BigDecimal actifNetApresIfi) {
+        Map<String, StackBarResult> stackBar = new LinkedHashMap<>();
+
+        for (var line : props.getBareme().getTranches()) {
+            BigDecimal min = nz(line.getMin());
+            BigDecimal max = line.getMax(); // null => open ended
+            BigDecimal consumed;
+            BigDecimal remaining;
+
+            if (min.compareTo(BigDecimal.ZERO) == 0 && max != null) {
+                consumed = actifNetApresIfi.compareTo(max) > 0 ? max : BigDecimal.ZERO;
+                remaining = max.subtract(consumed);
+            } else if (max == null) {
+                consumed = actifNetApresIfi.compareTo(min) > 0 ? actifNetApresIfi.subtract(min) : BigDecimal.ZERO;
+                remaining = actifNetApresIfi.compareTo(min) < 0 ? BigDecimal.valueOf(6_000_000) : BigDecimal.ZERO;
+            } else {
+                if (actifNetApresIfi.compareTo(min) > 0) {
+                    consumed = actifNetApresIfi.compareTo(max) < 0 ? actifNetApresIfi.subtract(min) : max.subtract(min);
+                } else {
+                    consumed = BigDecimal.ZERO;
+                }
+                remaining = max.subtract(min).subtract(consumed);
+            }
+
+            String key = nz(line.getTaux()).toPlainString().replace('.', ',') + "%";
+            stackBar.put(key, new StackBarResult(consumed.max(BigDecimal.ZERO), remaining.max(BigDecimal.ZERO)));
+        }
+
+        return stackBar;
+    }
+
+    private BigDecimal nz(BigDecimal v) { return v == null ? BigDecimal.ZERO : v; }
+}
+
+3.5 Suggestions (moteur identique au PHP)
+package com.bnpparibas.fis.ifi.domain.service.suggestion;
+
+import com.bnpparibas.fis.ifi.domain.model.Condition;
+
+import java.math.BigDecimal;
+import java.util.Map;
+
+public class ConditionEvaluator {
+
+    public boolean evaluate(Condition condition, Map<String, Object> data) {
+        if (condition == null) return true;
+
+        Object left = resolve(condition.getPart1(), data);
+        Object right = resolve(condition.getPart2(), data);
+
+        String op = condition.getOperator();
+
+        if ("||".equals(op)) return toBool(left) || toBool(right);
+        if ("&&".equals(op)) return toBool(left) && toBool(right);
+
+        // numeric compare if possible
+        BigDecimal lNum = toNumber(left);
+        BigDecimal rNum = toNumber(right);
+
+        if (lNum != null && rNum != null) {
+            int cmp = lNum.compareTo(rNum);
+            return switch (op) {
+                case ">" -> cmp > 0;
+                case ">=" -> cmp >= 0;
+                case "<" -> cmp < 0;
+                case "<=" -> cmp <= 0;
+                case "==" -> cmp == 0;
+                case "!=" -> cmp != 0;
+                default -> false;
+            };
+        }
+
+        // string compare fallback
+        String ls = left == null ? "" : left.toString();
+        String rs = right == null ? "" : right.toString();
+
+        return switch (op) {
+            case "==" -> ls.equals(rs);
+            case "!=" -> !ls.equals(rs);
+            default -> false;
+        };
+    }
+
+    private Object resolve(Object node, Map<String, Object> data) {
+        if (node instanceof Condition c) return evaluate(c, data);
+        if (node instanceof String s) {
+            // path: "actif.immobilier.RP.saisi"
+            if (s.contains(".")) return readPath(data, s);
+            return data.get(s);
+        }
+        return node;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Object readPath(Map<String, Object> data, String path) {
+        String[] parts = path.split("\\.");
+        Object cur = data;
+        for (String p : parts) {
+            if (!(cur instanceof Map<?, ?> m)) return null;
+            cur = ((Map<String, Object>) m).get(p);
+        }
+        return cur;
+    }
+
+    private boolean toBool(Object o) {
+        if (o instanceof Boolean b) return b;
+        if (o instanceof Number n) return n.doubleValue() != 0d;
+        if (o instanceof String s) return !s.isBlank() && !"false".equalsIgnoreCase(s) && !"0".equals(s);
+        return o != null;
+    }
+
+    private BigDecimal toNumber(Object o) {
+        if (o instanceof BigDecimal bd) return bd;
+        if (o instanceof Number n) return BigDecimal.valueOf(n.doubleValue());
+        if (o instanceof String s) {
+            try { return new BigDecimal(s.trim()); } catch (Exception e) { return null; }
+        }
+        return null;
+    }
+}
+
+package com.bnpparibas.fis.ifi.domain.service.suggestion;
+
+import com.bnpparibas.fis.ifi.domain.config.IfiBusinessProperties;
+import com.bnpparibas.fis.ifi.domain.model.Suggestion;
+
+import java.util.*;
+
+public class SuggestionEngine {
+
+    private final IfiBusinessProperties props;
+    private final ConditionEvaluator evaluator = new ConditionEvaluator();
+    private final Random random = new Random();
+
+    public SuggestionEngine(IfiBusinessProperties props) {
+        this.props = props;
+    }
+
+    public List<Suggestion> suggest(Map<String, Object> data) {
+        int show = props.getSuggestions().getShow();
+        if (show <= 0) return List.of();
+
+        Map<String, List<Suggestion>> eligibleByTheme = eligibleByTheme(data);
+
+        List<Suggestion> picked = new ArrayList<>();
+        List<Suggestion> leftovers = new ArrayList<>();
+
+        for (var entry : eligibleByTheme.entrySet()) {
+            String theme = entry.getKey();
+            List<Suggestion> list = entry.getValue();
+            if (list.isEmpty()) continue;
+
+            list.forEach(s -> s.setTheme(theme));
+
+            int idx = random.nextInt(list.size());
+            picked.add(list.get(idx));
+
+            for (int i = 0; i < list.size(); i++) {
+                if (i != idx) leftovers.add(list.get(i));
             }
         }
 
-        // Determine simulator for dynamic response code
-        if (simulatorFromFirstError == null && sim != null && !sim.isBlank()) {
-            simulatorFromFirstError = sim;
+        while (picked.size() < show && !leftovers.isEmpty()) {
+            int idx = random.nextInt(leftovers.size());
+            picked.add(leftovers.remove(idx));
         }
 
-        // Build readable error list
-        // Example: "PVI - saleDate : saleDate must be after or equal to acquisitionDate"
-        if (sim != null && !sim.isBlank()) {
-            errors.add(sim + " - " + error.getField() + " : " + msg);
-        } else {
-            errors.add(error.getField() + " : " + msg);
+        return picked.stream().limit(show).toList();
+    }
+
+    private Map<String, List<Suggestion>> eligibleByTheme(Map<String, Object> data) {
+        Map<String, List<Suggestion>> result = new LinkedHashMap<>();
+
+        result.put("systematique1", filter(props.getSuggestions().getThemes().getSystematique1(), data));
+        result.put("systematique2", filter(props.getSuggestions().getThemes().getSystematique2(), data));
+        result.put("aleatoire", filter(props.getSuggestions().getThemes().getAleatoire(), data));
+
+        return result;
+    }
+
+    private List<Suggestion> filter(List<Suggestion> suggestions, Map<String, Object> data) {
+        if (suggestions == null) return List.of();
+        List<Suggestion> out = new ArrayList<>();
+        for (Suggestion s : suggestions) {
+            if (s.getCondition() == null || evaluator.evaluate(s.getCondition(), data)) {
+                out.add(s);
+            }
         }
-
-        // If you want to include businessCode too in the list, use this instead:
-        // errors.add(sim + " - " + error.getField() + " (" + businessCode + ") : " + msg);
+        return out;
     }
-
-    // Build dynamic error code: e.g. "PVI-400-VALIDATION" or "PER-400-VALIDATION"
-    if (simulatorFromFirstError != null && !simulatorFromFirstError.isBlank()) {
-        dynamicCode = simulatorFromFirstError + "-400-VALIDATION";
-    }
-
-    log.info(ex.getMessage());
-
-    return new ResponseEntity<>(ErrorModel.builder()
-            .code(dynamicCode)
-            .message(String.join(", ", errors))
-            .description(PARAMETERS_ERROR_DESC)
-            .timestamp(LocalDateTime.now())
-            .build(), buildHttpHeaders(), HttpStatus.BAD_REQUEST);
 }
+
+3.6 Service principal (équivalent getResultat PHP)
+package com.bnpparibas.fis.ifi.domain.service;
+
+import com.bnpparibas.fis.ifi.domain.config.IfiBusinessProperties;
+import com.bnpparibas.fis.ifi.domain.model.IfiInputData;
+import com.bnpparibas.fis.ifi.domain.model.IfiResult;
+import com.bnpparibas.fis.ifi.domain.model.IfiTaxResult;
+import com.bnpparibas.fis.ifi.domain.model.Suggestion;
+import com.bnpparibas.fis.ifi.domain.service.calculator.*;
+import com.bnpparibas.fis.ifi.domain.service.suggestion.SuggestionEngine;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+public class IfiSimulationService {
+
+    private final PatrimoineCalculator patrimoineCalculator;
+    private final PassifCalculator passifCalculator;
+    private final ReductionCalculator reductionCalculator;
+    private final IfiTaxCalculator ifiTaxCalculator;
+    private final StackBarCalculator stackBarCalculator;
+    private final SuggestionEngine suggestionEngine;
+
+    public IfiSimulationService(IfiBusinessProperties props) {
+        this.patrimoineCalculator = new PatrimoineCalculator(props);
+        this.passifCalculator = new PassifCalculator();
+        this.reductionCalculator = new ReductionCalculator(props);
+        this.ifiTaxCalculator = new IfiTaxCalculator(props);
+        this.stackBarCalculator = new StackBarCalculator(props);
+        this.suggestionEngine = new SuggestionEngine(props);
+    }
+
+    public IfiResult simulate(IfiInputData input) {
+        BigDecimal actifTotal = patrimoineCalculator.computePatrimoine(input.actif());
+        BigDecimal passifTotal = passifCalculator.computePassif(input.passif());
+        BigDecimal reducTotal = reductionCalculator.computeReduction(input.reduc());
+
+        BigDecimal actifNet = actifTotal.subtract(passifTotal);
+
+        IfiTaxResult ifi = ifiTaxCalculator.computeIfi(actifNet, reducTotal);
+
+        BigDecimal tauxImpots = BigDecimal.ZERO;
+        if (actifNet.compareTo(BigDecimal.ZERO) != 0) {
+            tauxImpots = ifi.aPayer()
+                    .divide(actifNet, 10, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(100))
+                    .setScale(2, RoundingMode.HALF_UP);
+        }
+
+        String message = alertMessage(ifi, reducTotal);
+        Map<String, com.bnpparibas.fis.ifi.domain.model.StackBarResult> stackBar = Map.of();
+        if (message == null || message.isBlank()) {
+            BigDecimal netApresIfi = actifNet.subtract(ifi.aPayer());
+            stackBar = stackBarCalculator.compute(netApresIfi);
+        }
+
+        Map<String, Object> flat = toFlatData(input, actifTotal, passifTotal, reducTotal, actifNet, ifi);
+        List<Suggestion> suggestions = suggestionEngine.suggest(flat);
+
+        return new IfiResult(actifNet, ifi, tauxImpots, message == null ? "" : message, stackBar, suggestions);
+    }
+
+    private String alertMessage(IfiTaxResult ifi, BigDecimal reducTotal) {
+        StringBuilder sb = new StringBuilder();
+
+        if (ifi.aPayer().compareTo(BigDecimal.ZERO) <= 0) {
+            sb.append("Vous n'êtes pas redevable de l'IFI.<br>");
+        }
+
+        if (reducTotal.compareTo(ifi.avantReduc()) > 0) {
+            BigDecimal diff = reducTotal.subtract(ifi.avantReduc()).setScale(0, RoundingMode.HALF_UP);
+            sb.append("Votre réduction d'IFI est supérieure à l'IFI dû, à hauteur de ")
+              .append(diff.toPlainString()).append(" €.");
+        }
+
+        return sb.toString();
+    }
+
+    /**
+     * Structure de données pour matcher tes conditions type "actif.immobilier.RP.saisi" etc.
+     */
+    private Map<String, Object> toFlatData(IfiInputData input,
+                                          BigDecimal actifTotal,
+                                          BigDecimal passifTotal,
+                                          BigDecimal reducTotal,
+                                          BigDecimal actifNet,
+                                          IfiTaxResult ifi) {
+        Map<String, Object> root = new HashMap<>();
+        root.put("actifNet", actifNet);
+
+        Map<String, Object> actif = new HashMap<>();
+        actif.put("total", actifTotal);
+
+        Map<String, Object> immobilier = new HashMap<>();
+        Map<String, Object> rp = new HashMap<>();
+        rp.put("saisi", input.actif().immobilier() != null && input.actif().immobilier().rp() != null
+                ? input.actif().immobilier().rp().saisi() : BigDecimal.ZERO);
+        immobilier.put("RP", rp);
+        actif.put("immobilier", immobilier);
+
+        root.put("actif", actif);
+
+        Map<String, Object> passif = new HashMap<>();
+        passif.put("total", passifTotal);
+        root.put("passif", passif);
+
+        Map<String, Object> reduc = new HashMap<>();
+        reduc.put("total", reducTotal);
+        Map<String, Object> dons = new HashMap<>();
+        dons.put("saisi", input.reduc() != null && input.reduc().dons() != null ? input.reduc().dons().saisi() : BigDecimal.ZERO);
+        reduc.put("dons", dons);
+
+        Map<String, Object> investPme = new HashMap<>();
+        investPme.put("saisi", input.reduc() != null && input.reduc().investPme() != null ? input.reduc().investPme().saisi() : BigDecimal.ZERO);
+        reduc.put("investPme", investPme);
+
+        Map<String, Object> fipFcpi = new HashMap<>();
+        fipFcpi.put("saisi", input.reduc() != null && input.reduc().fipFcpi() != null ? input.reduc().fipFcpi().saisi() : BigDecimal.ZERO);
+        reduc.put("fipFcpi", fipFcpi);
+
+        root.put("reduc", reduc);
+
+        root.put("ifi", Map.of(
+                "theorique", ifi.theorique(),
+                "avantReduc", ifi.avantReduc(),
+                "aPayer", ifi.aPayer()
+        ));
+
+        return root;
+    }
+}
+
+4) Exposition (Spring Boot REST) – code complet
+4.1 IfiApplication.java
+package com.bnpparibas.fis.ifi.exposition;
+
+import com.bnpparibas.fis.ifi.domain.config.IfiBusinessProperties;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+
+@SpringBootApplication(scanBasePackages = "com.bnpparibas.fis.ifi")
+@EnableConfigurationProperties(IfiBusinessProperties.class)
+public class IfiApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(IfiApplication.class, args);
+    }
+}
+
+4.2 DTO + Mapper + Controller
+package com.bnpparibas.fis.ifi.exposition.dto;
+
+import java.math.BigDecimal;
+import java.util.Map;
+
+public class IfiSimulationRequestDto {
+    public Actif actif;
+    public Passif passif;
+    public Reduc reduc;
+
+    public static class Actif {
+        public String details;
+        public BigDecimal total;
+        public Immobilier immobilier;
+        public Biens biens;
+    }
+    public static class Immobilier {
+        public Rp rp;
+        public Locatif locatif;
+        public BigDecimal autre;
+    }
+    public static class Rp { public BigDecimal saisi; }
+    public static class Locatif {
+        public String details;
+        public BigDecimal total;
+        public Map<String, BigDecimal> detailValues;
+    }
+    public static class Biens {
+        public Bois bois;
+        public Ruraux ruraux;
+    }
+    public static class Bois { public BigDecimal saisi; }
+    public static class Ruraux { public BigDecimal saisi; }
+
+    public static class Passif {
+        public String details;
+        public BigDecimal total;
+        public BigDecimal taxesFoncieres;
+        public BigDecimal dettesImmobilieres;
+    }
+
+    public static class Reduc {
+        public String details;
+        public BigDecimal total;
+        public Invest investPme;
+        public Invest fipFcpi;
+        public Don dons;
+    }
+    public static class Invest { public BigDecimal saisi; }
+    public static class Don { public BigDecimal saisi; }
+}
+
+package com.bnpparibas.fis.ifi.exposition.dto;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
+
+public class IfiSimulationResponseDto {
+    public BigDecimal actifNet;
+    public Ifi ifi;
+    public BigDecimal tauxImpots;
+    public String message;
+    public Map<String, StackBar> stackBar;
+    public List<Suggestion> suggestions;
+
+    public static class Ifi {
+        public BigDecimal theorique;
+        public BigDecimal avantReduc;
+        public BigDecimal aPayer;
+    }
+
+    public static class StackBar {
+        public BigDecimal trancheConsommee;
+        public BigDecimal trancheNonConsommee;
+    }
+
+    public static class Suggestion {
+        public String theme;
+        public String value;
+        public String url;
+    }
+}
+
+package com.bnpparibas.fis.ifi.exposition.dto;
+
+import com.bnpparibas.fis.ifi.domain.model.*;
+
+import java.util.Map;
+import java.util.stream.Collectors;
+
+public class Mapper {
+
+    public static IfiInputData toDomain(IfiSimulationRequestDto dto) {
+        return new IfiInputData(
+                new IfiInputData.Actif(
+                        dto.actif != null ? dto.actif.details : "non",
+                        dto.actif != null ? dto.actif.total : null,
+                        dto.actif != null ? new IfiInputData.Actif.Immobilier(
+                                dto.actif.immobilier != null ? new IfiInputData.Actif.Immobilier.RP(dto.actif.immobilier.rp != null ? dto.actif.immobilier.rp.saisi : null) : new IfiInputData.Actif.Immobilier.RP(null),
+                                dto.actif.immobilier != null ? new IfiInputData.Actif.Immobilier.Locatif(
+                                        dto.actif.immobilier.locatif != null ? dto.actif.immobilier.locatif.details : "non",
+                                        dto.actif.immobilier.locatif != null ? dto.actif.immobilier.locatif.total : null,
+                                        dto.actif.immobilier.locatif != null ? dto.actif.immobilier.locatif.detailValues : Map.of()
+                                ) : new IfiInputData.Actif.Immobilier.Locatif("non", null, Map.of()),
+                                dto.actif.immobilier != null ? dto.actif.immobilier.autre : null
+                        ) : new IfiInputData.Actif.Immobilier(new IfiInputData.Actif.Immobilier.RP(null), new IfiInputData.Actif.Immobilier.Locatif("non", null, Map.of()), null) : null,
+                        dto.actif != null ? new IfiInputData.Actif.Biens(
+                                dto.actif.biens != null ? new IfiInputData.Actif.Biens.Bois(dto.actif.biens.bois != null ? dto.actif.biens.bois.saisi : null) : new IfiInputData.Actif.Biens.Bois(null),
+                                dto.actif.biens != null ? new IfiInputData.Actif.Biens.Ruraux(dto.actif.biens.ruraux != null ? dto.actif.biens.ruraux.saisi : null) : new IfiInputData.Actif.Biens.Ruraux(null)
+                        ) : new IfiInputData.Actif.Biens(new IfiInputData.Actif.Biens.Bois(null), new IfiInputData.Actif.Biens.Ruraux(null))
+                ),
+                new IfiInputData.Passif(
+                        dto.passif != null ? dto.passif.details : "non",
+                        dto.passif != null ? dto.passif.total : null,
+                        dto.passif != null ? dto.passif.taxesFoncieres : null,
+                        dto.passif != null ? dto.passif.dettesImmobilieres : null
+                ),
+                dto.reduc != null ? new IfiInputData.Reduc(
+                        dto.reduc.details,
+                        dto.reduc.total,
+                        dto.reduc.investPme != null ? new IfiInputData.Reduc.Invest(dto.reduc.investPme.saisi) : null,
+                        dto.reduc.fipFcpi != null ? new IfiInputData.Reduc.Invest(dto.reduc.fipFcpi.saisi) : null,
+                        dto.reduc.dons != null ? new IfiInputData.Reduc.Don(dto.reduc.dons.saisi) : null
+                ) : null
+        );
+    }
+
+    public static IfiSimulationResponseDto toDto(IfiResult r) {
+        IfiSimulationResponseDto dto = new IfiSimulationResponseDto();
+        dto.actifNet = r.actifNet();
+        dto.tauxImpots = r.tauxImpots();
+        dto.message = r.message();
+
+        dto.ifi = new IfiSimulationResponseDto.Ifi();
+        dto.ifi.theorique = r.ifi().theorique();
+        dto.ifi.avantReduc = r.ifi().avantReduc();
+        dto.ifi.aPayer = r.ifi().aPayer();
+
+        dto.stackBar = r.stackBar() == null ? null :
+                r.stackBar().entrySet().stream().collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        e -> {
+                            var sb = new IfiSimulationResponseDto.StackBar();
+                            sb.trancheConsommee = e.getValue().trancheConsommee();
+                            sb.trancheNonConsommee = e.getValue().trancheNonConsommee();
+                            return sb;
+                        },
+                        (a,b) -> a,
+                        java.util.LinkedHashMap::new
+                ));
+
+        dto.suggestions = r.suggestions() == null ? null :
+                r.suggestions().stream().map(s -> {
+                    var x = new IfiSimulationResponseDto.Suggestion();
+                    x.theme = s.getTheme();
+                    x.value = s.getValue();
+                    x.url = s.getUrl();
+                    return x;
+                }).toList();
+
+        return dto;
+    }
+}
+
+package com.bnpparibas.fis.ifi.exposition.controller;
+
+import com.bnpparibas.fis.ifi.domain.config.IfiBusinessProperties;
+import com.bnpparibas.fis.ifi.domain.service.IfiSimulationService;
+import com.bnpparibas.fis.ifi.exposition.dto.IfiSimulationRequestDto;
+import com.bnpparibas.fis.ifi.exposition.dto.IfiSimulationResponseDto;
+import com.bnpparibas.fis.ifi.exposition.dto.Mapper;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/ifi")
+public class IfiController {
+
+    private final IfiSimulationService service;
+
+    public IfiController(IfiBusinessProperties props) {
+        this.service = new IfiSimulationService(props);
+    }
+
+    @PostMapping("/simulate")
+    public IfiSimulationResponseDto simulate(@RequestBody IfiSimulationRequestDto req) {
+        var domainInput = Mapper.toDomain(req);
+        var result = service.simulate(domainInput);
+        return Mapper.toDto(result);
+    }
+}
+
+5) Ce qu’il manque pour dire “projet complet” (et qu’on fera ensuite)
+
+Pour finir comme PVI (avec steps/story/navigation/etc.), il me faudra :
+
+Le steps.json final (tu m’as collé de gros extraits, mais il faut la version “propre” complète si on veut aussi gérer l’UI/back comme dans PHP).
+
+Si tu veux refaire le mécanisme process/getNextStep/story côté Spring : il faut la règle exacte côté front (qui pilote quoi) et si tu veux un backend stateful (sauvegarde simulation) ou simple stateless (recommandé).
+
+Les règles restantes non visibles (ex: champs “autres passifs” dans PHP UI mais pas dans le calcul passif détaillé, etc.)
+
+Si tu me dis juste “on part sur stateless comme PVI Spring (un endpoint /simulate) et le front gère les steps”, alors ce que je t’ai donné est déjà un simulateur IFI back complet.
+
+Prochaine étape (sans blabla) : envoie-moi la capture / l’arborescence PVI “domain/exposition” complète ou le pom.xml parent, et je te génère les modules Maven + wiring Spring exactement au même standard que ton PVI.
