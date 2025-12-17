@@ -1,49 +1,17 @@
 {
   "actif": {
-    "details": "oui",
-    "total": 0,
-    "immobilier": {
-      "rp": {
-        "saisi": 1800000
-      },
-      "locatif": {
-        "details": "oui",
-        "total": 0,
-        "detailValues": {
-          "direct": 1200000,
-          "comNoExo": 650000,
-          "partsSociete": 350000,
-          "asscap": 300000
-        }
-      },
-      "autre": 420000
-    },
-    "biens": {
-      "bois": {
-        "saisi": 240000
-      },
-      "ruraux": {
-        "saisi": 320000
-      }
-    }
+    "details": "non",
+    "total": 4000000
   },
   "passif": {
-    "details": "oui",
-    "total": 0,
-    "taxesFoncieres": 12000,
-    "dettesImmobilieres": 388000
+    "details": "non",
+    "total": 0
   },
   "reduc": {
     "details": "oui",
     "total": 0,
-    "investPme": {
-      "saisi": 90000
-    },
-    "fipFcpi": {
-      "saisi": 36000
-    },
-    "dons": {
-      "saisi": 30000
-    }
+    "investPme": { "saisi": 100000 },
+    "fipFcpi": { "saisi": 40000 },
+    "dons": { "saisi": 20000 }
   }
 }
