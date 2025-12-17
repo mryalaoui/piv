@@ -1,17 +1,67 @@
-{
-  "actif": {
-    "details": "non",
-    "total": 4000000
-  },
-  "passif": {
-    "details": "non",
-    "total": 0
-  },
-  "reduc": {
-    "details": "oui",
-    "total": 0,
-    "investPme": { "saisi": 100000 },
-    "fipFcpi": { "saisi": 40000 },
-    "dons": { "saisi": 20000 }
-  }
-}
+TABLE DE RÉFÉRENCE – IFI (FR → EN)
+🔹 Racine / Concepts globaux
+Français	Anglais (API simple)	Commentaire
+actif	assets	Actifs immobiliers imposables
+passif	liabilities	Passif déductible
+reduc	reductions	Réductions IFI
+details	details	"oui" / "non" (mode détaillé)
+total	total	Montant total
+🏠 Immobilier
+Français	Anglais	Commentaire
+immobilier	realEstate	Ensemble immobilier
+rp	mainResidence	Résidence principale
+saisi	entered	Valeur saisie par l’utilisateur
+autre	other	Autres biens immobiliers
+🏢 Immobilier locatif
+Français	Anglais	Commentaire
+locatif	rental	Immobilier locatif
+detailValues	breakdown	Détail par type
+direct	direct	Détention directe
+comNoExo	nonExemptCompany	SCI/SARL non exonérée
+partsSociete	fundShares	SCPI / OPCI
+asscap	insurance	Assurance-vie / capitalisation
+🌲 Autres biens
+Français	Anglais	Commentaire
+biens	goods	Biens exonérés partiellement
+bois	forest	Bois et forêts
+ruraux	rural	Biens ruraux
+💳 Passif
+Français	Anglais	Commentaire
+taxesFoncieres	propertyTaxes	Taxes foncières
+dettesImmobilieres	realEstateDebt	Dettes immobilières
+💰 Réductions IFI
+Français	Anglais	Commentaire
+investPme	smeInvestment	Investissement PME
+fipFcpi	fipFcpi	FIP / FCPI
+dons	donation	Dons
+plafond	cap	Plafond de réduction
+taux	rate	Taux de réduction
+📊 Calculs / Résultats
+Français	Anglais	Commentaire
+actifNet	netAssets	Actif net taxable
+ifi	ifi	Résultat IFI
+theorique	theoretical	IFI théorique
+avantReduc	beforeReduction	IFI avant réduction
+aPayer	toPay	IFI à payer
+tauxImpots	taxRate	Taux moyen d’imposition
+message	message	Message utilisateur
+stackBar	bracketChart	Graphe par tranche
+⚙️ Règles de gestion / Barème
+Français	Anglais	Commentaire
+bareme	taxBrackets	Barème IFI
+tranche	bracket	Tranche d’imposition
+min	min	Borne basse
+max	max	Borne haute
+taux	rate	Taux (%)
+montant	offset	Montant à soustraire
+seuil	threshold	Seuil fiscal
+abattement	allowance	Abattement
+exonération	exemption	Exonération
+decote	discount	Décote IFI
+🧠 Divers / Techniques
+Français	Anglais	Commentaire
+simulation	simulation	Simulation
+resultat	result	Résultat final
+suggestion	suggestion	Conseil affiché
+condition	condition	Condition métier
+story	story	Parcours utilisateur
