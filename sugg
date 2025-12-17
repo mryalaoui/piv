@@ -1,77 +1,26 @@
-ifi:
-  bareme:
-    dr454: 1400000
-    dr455: 17500
-    dr456: 1.25
-    tranches:
-      - min: 0
-        max: 800000
-        taux: 0
-        montant: 0
-      - min: 800000
-        max: 1300000
-        taux: 0.5
-        montant: 4000
-      - min: 1300000
-        max: 2570000
-        taux: 0.7
-        montant: 6600
-      - min: 2570000
-        max: 5000000
-        taux: 1
-        montant: 14310
-      - min: 5000000
-        max: 10000000
-        taux: 1.25
-        montant: 26810
-      - min: 10000000
-        max: null
-        taux: 1.5
-        montant: 51810
-
-  constants:
-    seuilImposition: 1300000
-    abattementResidencePrincipalePct: 30
-    abattementBoisPct: 75
-    rurauxSeuil: 101897
-    abattementRurauxSousSeuilPct: 75
-    abattementRurauxAuDelaPct: 50
-    reducMaxDonsSeuls: 50000
-    reducMaxAutre: 45000
-    reducTauxInvestPme: 0.50
-    reducMaxInvestPme: 45000
-    reducTauxFipFcpi: 0.50
-    reducMaxFipFcpi: 18000
-    reducTauxDons: 0.75
-    reducMaxDons: 50000
-
-  suggestions:
-    show: 4
-    themes:
-      systematique1:
-        - value: "Connaissez-vous la composition spécifique du foyer fiscal IFI ?"
-      systematique2:
-        - value: "Vous devez reporter le montant de la valeur brute et de la valeur nette taxable de votre patrimoine sur votre déclaration..."
-          url: "/impot-sur-la-fortune-immobiliere#declare-paie-ifi"
-          condition:
-            part1: "actifNet"
-            operator: ">"
-            part2: 1300000
-      aleatoire:
-        - value: "Savez-vous que l'abattement de 30 % sur la résidence principale n'est pas applicable en cas de détention via une SCI ?"
-          url: "/impot-sur-la-fortune-immobiliere#fonction-abattement"
-          condition:
-            part1: "actif.immobilier.RP.saisi"
-            operator: ">"
-            part2: 0
-        - value: "L'impôt sur le revenu, les prélèvements sociaux et les dettes non immobilières ne sont pas déductibles."
-          condition:
-            part1: "passif.total"
-            operator: ">"
-            part2: 0
-        - value: "Réduction IFI : dons..."
-          url: "/impot-sur-la-fortune-immobiliere#comment-reduire-ifi"
-          condition:
-            part1: "reduc.dons.saisi"
-            operator: ">"
-            part2: 0
+{
+  "actif": {
+    "details": "oui",
+    "total": 0,
+    "immobilier": {
+      "rp": { "saisi": 1000000 },
+      "locatif": {
+        "details": "non",
+        "total": 500000
+      },
+      "autre": 200000
+    },
+    "biens": {
+      "bois": { "saisi": 100000 },
+      "ruraux": { "saisi": 80000 }
+    }
+  },
+  "passif": {
+    "details": "non",
+    "total": 100000
+  },
+  "reduc": {
+    "details": "non",
+    "total": 0
+  }
+}
